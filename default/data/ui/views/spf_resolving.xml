@@ -1,0 +1,99 @@
+<form>
+  <search id="base_spf_resolving">
+    <query>
+      `external_dns_log` record_request="A" [| `dmarc_domains(domain)` | eval query="spf.".domain | fields - domain] 
+      | eval query=lower(query) 
+      | rex field=query "(?&lt;sending_server_ip&gt;\d+\.\d+\.\d+\.\d+)\.\_h\.(?&lt;sending_server_helo&gt;.*?)\.\_o\.(?&lt;sending_mail_domain&gt;.*?)(?:\.spf\.|\.\_spf\.)"
+      | fillnull value="none" response_error
+      | stats values(sending_server_helo) AS sending_server_helo, values(src_ip) AS recieving_server_ip, count by sending_server_ip response_error sending_mail_domain
+      | table sending_server_ip sending_server_helo sending_mail_domain response_error recieving_server_ip count
+    </query>
+    <earliest>$timeRange.earliest$</earliest>
+    <latest>$timeRange.latest$</latest>
+  </search>
+  <label>SPF resolving</label>
+  <fieldset submitButton="true">
+    <input type="time" token="timeRange">
+      <label>Time Range</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+    <input type="dropdown" token="spfServer">
+      <label>SPF server?</label>
+      <choice value="*">All</choice>
+      <choice value="yes">Yes</choice>
+      <choice value="no">No</choice>
+      <default>*</default>
+      <prefix>spf_server="</prefix>
+      <suffix>"</suffix>
+      <initialValue>*</initialValue>
+    </input>
+    <input type="multiselect" token="heloMulti">
+      <label>HELO/EHLO</label>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <prefix>(</prefix>
+      <suffix>)</suffix>
+      <initialValue>*</initialValue>
+      <valuePrefix>sending_server_helo="</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+      <delimiter> OR </delimiter>
+      <fieldForLabel>sending_server_helo</fieldForLabel>
+      <fieldForValue>sending_server_helo</fieldForValue>
+      <search base="base_spf_resolving">
+        <query>| stats count by sending_server_helo</query>
+      </search>
+    </input>
+    <input type="multiselect" token="maildomainMulti">
+      <label>Email domain</label>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <prefix>(</prefix>
+      <suffix>)</suffix>
+      <initialValue>*</initialValue>
+      <valuePrefix>sending_mail_domain="</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+      <delimiter> OR </delimiter>
+      <fieldForLabel>sending_mail_domain</fieldForLabel>
+      <fieldForValue>sending_mail_domain</fieldForValue>
+      <search base="base_spf_resolving">
+        <query>| stats count by sending_mail_domain</query>
+      </search>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <table>
+        <search base="base_spf_resolving">
+          <query>| sort - count
+| lookup spf_mailservers ip AS sending_server_ip OUTPUTNEW mail_server_group AS mail_server_group_ip
+| lookup spf_mailservers mail_server_group AS sending_mail_domain OUTPUTNEW mail_server_group AS mail_server_group_domain
+| eval mail_server_group_domain=mvdedup(mail_server_group_domain)
+| eval spf_server=if(sending_mail_domain IN(mail_server_group_ip), "Yes", "No"), known_mail_domain=if(sending_mail_domain IN(mail_server_group_domain), "Yes", "No"), recieving_server_ip=if(mvcount(recieving_server_ip)&gt;10,mvcount(recieving_server_ip)." recieving servers", recieving_server_ip)
+| iplocation sending_server_ip
+| table sending_server_ip sending_server_helo Country sending_mail_domain  spf_server response_error recieving_server_ip count 
+| search $spfServer$ $heloMulti$ $maildomainMulti$ sending_server_helo!="%*"
+| rename sending_server_ip AS "Sending server IP", sending_server_helo AS "HELO/EHLO", sending_mail_domain AS "Email domain", spf_server AS "SPF server?", response_error AS "DNS response", recieving_server_ip AS "Recieving Mail server", count AS "DNS Hits",</query>
+        </search>
+        <option name="count">100</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="percentagesRow">false</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <format type="color" field="SPF server?">
+          <colorPalette type="map">{"Yes":#65A637,"No":#D93F3C}</colorPalette>
+        </format>
+        <format type="color" field="DNS response">
+          <colorPalette type="map">{"NXDOMAIN":#D93F3C,"NOERROR":#65A637,"REFUSED":#D93F3C}</colorPalette>
+        </format>
+        <format type="color" field="Known mailserver?">
+          <colorPalette type="map">{"Yes":#65A637,"No":#D93F3C}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+</form>

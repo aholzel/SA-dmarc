@@ -1,0 +1,11 @@
+<nav search_view="search" color="#65A637">
+
+    <view name="dmarc_overview" default="true" />
+    <view name="dmarc_cluster_map" />
+    <view name="dmarc_mails_by_source_results" />
+    <view name="spf_resolving" />  
+    <collection label="RFC info">
+        <view source="unclassified" match="rfc_info"/>
+    </collection>
+    <view name="search"/>
+</nav>

@@ -1,0 +1,105 @@
+<dashboard>
+  <label>DMARC RFC info</label>
+  <description>Brief summary of the important parts of the DMARC RFC7489. (all links open in a new window)</description>
+  <row>
+    <panel>
+      <html>
+        <h2>DMARC</h2>
+        <b>Alignment</b>
+        <br/>
+        From <a href="https://tools.ietf.org/html/rfc7489#section-3" target="_blank">RFC7489 Section 3</a>:<br/>
+        <i>Authenticated Identifiers: Domain-level identifiers that are validated using authentication technologies are referred to as "Authenticated Identifiers". See <a href="https://tools.ietf.org/html/rfc7489#section-4.1" target="_blank">Section 4.1</a> for details about the supported mechanisms.<br/>
+        Identifier Alignment: When the domain in the RFC5322.From address matches a domain validated by SPF or DKIM (or both), it has Identifier Alignment.</i>
+        <br/>
+        <b>Policy</b>
+        <br/>
+        From <a href="https://tools.ietf.org/html/rfc7489#section-4.2" target="_blank">RFC7489 Section 4.2</a>:
+        <br/>
+        A message satisfies the DMARC checks if at least one of the supported authentication mechanisms:
+        <ol>
+          <li>produces a "pass" result, and</li>
+          <li>produces that result based on an identifier that is in alignment, as defined in <a href="https://tools.ietf.org/html/rfc7489#section-3" target="_blank">Section 3</a>.</li>
+        </ol>
+        <br/>
+        <b>Possible SPF results</b>
+        <br/>
+        From <a href="https://tools.ietf.org/html/rfc7208#section-2.6" target="_blank">RFC7208 Section 2.6.x</a>:
+        <ul>
+            <li><b>None:</b> A result of "none" means either (a) no syntactically valid DNS domain name was extracted from the SMTP session that could be used as the one to be authorized, or (b) no SPF records were retrieved from the DNS.</li>
+            <li><b>Neutral:</b> A "neutral" result means the ADMD has explicitly stated that it is not asserting whether the IP address is authorized.</li>
+            <li><b>Pass:</b> A "pass" result is an explicit statement that the client is authorized to inject mail with the given identity.</li>
+            <li><b>Fail:</b> A "fail" result is an explicit statement that the client is not authorized to use the domain in the given identity.</li>
+            <li><b>Softfail:</b> A "softfail" result is a weak statement by the publishing ADMD that the host is probably not authorized. It has not published a stronger, more definitive policy that results in a "fail".</li>
+            <li><b>Temperror:</b> A "temperror" result means the SPF verifier encountered a transient (generally DNS) error while performing the check. A later retry may succeed without further DNS operator action.</li>
+            <li><b>Permerror:</b> A "permerror" result means the domain's published records could not be correctly interpreted. This signals an error condition that definitely requires DNS operator intervention to be resolved.</li>
+        </ul>
+        <br/>
+        <b>Possible DKIM results</b>
+        <br/>
+        From <a href="https://tools.ietf.org/html/rfc7001#section-2.6.1" target="_blank">RFC7001 Section 2.6.1</a>:
+        <br/>
+        <ul>
+            <li><b>none:</b> The message was not signed.</li>
+            <li><b>pass:</b> The message was signed, the signature or signatures were acceptable to the ADMD, and the signature(s) passed verification tests.</li>
+            <li><b>fail:</b> The message was signed and the signature or signatures were acceptable to the ADMD, but they failed the verification test(s).</li>
+            <li><b>policy:</b> The message was signed, but some aspect of the signature or signatures was not acceptable to the ADMD.</li>
+            <li><b>neutral:</b> The message was signed, but the signature or signatures contained syntax errors or were not otherwise able to be processed.  This result is also used for other failures not covered elsewhere in this list.</li>
+            <li><b>temperror:</b> The message could not be verified due to some error that is likely transient in nature, such as a temporary inability to retrieve a public key.  A later attempt may produce a final result.</li>
+            <li><b>permerror:</b> The message could not be verified due to some error that is unrecoverable, such as a required header field being absent.  A later attempt is unlikely to produce a final result.</li>
+        </ul>
+        <br/>
+        <b>Determine handeling policy</b>
+        <br/>
+        From <a href="https://tools.ietf.org/html/rfc7489#section-6.2.2" target="_blank">RFC7489 Section 6.2.2</a>:
+        <br/>
+        The steps are as follow (short version):
+        <ol>
+            <li>Extract the RFC5322.From domain from the message</li>
+            <li>Query the DNS for a DMARC policy record. Continue if one is found, or terminate DMARC evaluation otherwise.</li>
+            <li>Perform DKIM signature verification checks.</li>
+            <li>Perform SPF validation checks.</li>
+            <li>Conduct Identifier Alignment checks. If one or more of the Authenticated Identifiers align with the RFC5322.From domain, the message is considered to pass the DMARC mechanism check. <b>All other conditions</b> (authentication failures, identifier mismatches) are considered to be DMARC mechanism check failures.</li>
+            <li>Apply policy.</li>
+        </ol>
+        <b>Handling policy in this app</b>
+        <br/>
+        To determin if the requested policy was applied to a message the following steps are taken within this app (all within the <code>spf_dkim_dmarc_checks</code> macro):
+        <ol>
+            <li>Check if there is SPF allignement</li>
+            <ul>
+                <li>Check the aspf policy at the time of the report [this is in the report]</li>
+                <li>Check the header from of the mail(s) [this is in the report]</li>
+                <li>Compare the above as discribed in <a href="https://tools.ietf.org/html/rfc7489#section-3.1.2" target="_blank">RFC7489 Section 3.1.2</a> with the PTR of the source_ip</li>
+                <li>Check the SPF result that is supplied in the rua report</li>
+                <li>Check if there is a SPF policy "pass" or "no_pass" by applying <a href="https://tools.ietf.org/html/rfc7489#section-4.2" target="_blank">RFC7489 Section 4.2</a></li>
+            </ul>
+            <li>Check if there is DKIM allignement</li>
+            <ul>
+                <li>Check the adkim policy at the time of the report [this is in the report]</li>
+                <li>Check the header from of the mail(s) [this is in the report]</li>
+                <li>Compare the above as discribed in <a href="https://tools.ietf.org/html/rfc7489#section-3.1.1" target="_blank">RFC7489 Section 3.1.1</a> with the "d=" value [this is in the report]</li>
+                <li>Check the DKIM result that is supplied in the rua report</li>
+                <li>Check if there is a DKIM policy "pass" or "no_pass" by applying <a href="https://tools.ietf.org/html/rfc7489#section-4.2" target="_blank">RFC7489 Section 4.2</a></li>
+            </ul>
+            <li>Check if the correct DMARC policy is applied</li>
+            <ul>
+                <li>If either the SPF policy OR the DKIM policy produces a "pass" AND the publised policy is "none" (a.k.a. deliver) >> <b>"Yes"</b></li>
+                <li>If the SPF policy AND the DKIM policy produces a "no_pass" AND the evaluated disposition of the message is equal to the publiced policy >> <b>"Yes"</b></li>
+                <li>If either the SPF policy OR the DKIM policy produces a "pass" AND the evaluated disposition of the messageis not equal to "none" (a.k.a. deliver) >> <b>"No (message should have been deliverd)"</b></li>
+                <li>If the SPF policy AND the DKIM policy produces a "no_pass" AND the evaluated disposition of the message is not equal to the publiced policy >> <b>"No (policy should have been applied)"</b></li>
+                <li>Anything else >> <b>"No"</b></li>
+            </ul>
+        </ol>
+        <br/>
+        <b>Send RUA mails to other domain</b>
+        <br/>
+        From <a href="https://tools.ietf.org/html/rfc7489#section-7.1" target="_blank">RFC7489 Section 7.1</a>:
+        <br/>
+        <i>It is possible to specify destinations for the different reports that are outside the authority of the Domain Owner making the request. This allows domains that do not operate mail servers to request reports and have them go someplace that is able to receive and process them.</i>
+        This requires an additional DNS entry in the DNS of the recipient domain that needs to be checked. Without checks, this would allow a bad actor to publish a DMARC policy record that requests that reports be sent to a victim address, and then send a large volume of mail that will fail both DKIM and SPF checks to a wide variety of destinations; the victim will in turn be flooded with unwanted reports.<br/> <br/>
+        <b>Example:</b> If a DMARC policy query for "blue.example.com" contained "rua=mailto:reports@red.example.net", the host extracted from the latter ("red.example.net") does not match "blue.example.com", so this procedure is enacted.<br/>
+        A TXT query for "blue.example.com._report._dmarc.red.example.net" is issued. If a single reply comes back containing a tag of "v=DMARC1", then the relationship between the two is confirmed.
+      </html>
+    </panel>
+  </row>
+</dashboard>

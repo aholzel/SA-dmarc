@@ -1,0 +1,151 @@
+<dashboard>
+  <label>SPF RFC info</label>
+  <description>Brief summary of the important parts of the SPF RFC7208. (all links open in a new window)</description>
+  <row>
+    <panel>
+      <html>
+        <h2>SPF</h2>
+        <b>Results of Evalutaion</b>
+        From <a href="https://tools.ietf.org/html/rfc7208#section-2.6" target="_blank">RFC7208 Section 2.6.x</a>:
+        <br/>
+        This section enumerates and briefly defines the possible outputs of that function (check_host(), A.H.). Note, however, that the protocol establishes no normative requirements for handling any particular result.
+        <ul>
+            <li><b>None:</b> A result of "none" means either (a) no syntactically valid DNS domain name was extracted from the SMTP session that could be used as the one to be authorized, or (b) no SPF records were retrieved from the DNS.</li>
+            <li><b>Neutral:</b> A "neutral" result means the ADMD has explicitly stated that it is not asserting whether the IP address is authorized.</li>
+            <li><b>Pass:</b> A "pass" result is an explicit statement that the client is authorized to inject mail with the given identity.</li>
+            <li><b>Fail:</b> A "fail" result is an explicit statement that the client is not authorized to use the domain in the given identity.</li>
+            <li><b>Softfail:</b> A "softfail" result is a weak statement by the publishing ADMD that the host is probably not authorized. It has not published a stronger, more definitive policy that results in a "fail".</li>
+            <li><b>Temperror:</b> A "temperror" result means the SPF verifier encountered a transient (generally DNS) error while performing the check. A later retry may succeed without further DNS operator action.</li>
+            <li><b>Permerror:</b> A "permerror" result means the domain's published records could not be correctly interpreted. This signals an error condition that definitely requires DNS operator intervention to be resolved.</li>
+        </ul>
+        See <a href="https://tools.ietf.org/html/rfc7208#section-8" target="_blank">RFC7208 Section 8.x</a> for the result handling.
+        <br/>
+        Regarding Permerror RFC7208 also specifies the following in <a href="https://tools.ietf.org/html/rfc7208#section-4.6" target="_blank">Section 4.6</a>:
+        <br/>
+        The check_host() function parses and interprets the SPF record to find a result for the current test.  The syntax of the record is validated first, and if there are any syntax errors anywhere in the record, check_host() returns immediately with the result "permerror", without further interpretation or evaluation.
+        <h3>Tips</h3>
+        <b>DNS Resource Considerations</b>
+        From <a href="https://tools.ietf.org/html/rfc7208#section-10.1.1" target="_blank">RFC7208 Section 10.1.1</a>:
+        <br/>
+        Minimizing the DNS resources needed for SPF lookups can be done by choosing directives that require less DNS information and by placing lower-cost mechanisms earlier in the SPF record.
+        <br/>
+        <b>For example, consider a domain set up as follows:</b>
+        <pre><code>example.com.        IN MX   10 mx.example.com.
+                    IN MX   20 mx2.example.com.
+mx.example.com.     IN A    192.0.2.1
+mx2.example.com.    IN A    192.0.2.129</code></pre>
+        Assume the administrative point is to authorize (pass) mx and mx2 while failing every other host.  Compare the following solutions:
+        <pre><code>Best record:
+  example.com.   IN TXT  "v=spf1 ip4:192.0.2.1 ip4:192.0.2.129 -all"
+
+Good record:
+  $ORIGIN example.com.
+  @              IN TXT  "v=spf1 a:authorized-spf.example.com -all"
+  authorized-spf IN A    192.0.2.1
+                 IN A    192.0.2.129
+
+Expensive record:
+  example.com.   IN TXT  "v=spf1 mx:example.com -all"
+
+Wasteful, bad record:
+  example.com.   IN TXT  "v=spf1 ip4:192.0.2.0/24 mx -all"</code></pre>
+        <br/>
+        <b>The "this domain doesn't send mail record"</b>
+        <br/>
+        If you don't send any mail from a (sub-) domain it is adviced to set a record indicating this. The record for a domain that sends no mail is:
+        <pre><code>www.example.com.   IN TXT  "v=spf1 -all"</code></pre>
+        <b>Wildcard SPF record</b>
+        <br/>
+        Unfortuantly SPF doesn't support a herarchical approach like DMARC where you have one record on the domain level that counts for all of the subdomains unless a more specific record is created for a subdomain. So for every subdomain you need to create a TXT record with the spf policy for that subdomain. You can however create an wildcard domain with an spf policy for all <b>non</b> existing domains. This will make sure a "Fail" status will be set if someone is trying to use non existing subdomains.
+        <br/>
+        <pre><code>*.example.com.   IN TXT  "v=spf1 -all"</code></pre>
+        <b>include VS redirect</b>
+        <br/>
+        From <a href="https://tools.ietf.org/html/rfc7208#section-5.2" target="_blank">RFC7208 Section 5.2</a>:
+        <br/>
+        The "include" mechanism is intended for crossing administrative boundaries. When remaining within one administrative authority, "include" is usually not the best choice. (...) With the "include" mechanism, an administratively external set of hosts can be authorized, but determination of sender policy is still a function of the original domain's SPF record (as determined by the "all" mechanism in that record).  The "redirect" modifier is more suitable for consolidating both authorizations and policy into a common set to be shared within an ADMD.
+        <br/>
+        From <a href="https://tools.ietf.org/html/rfc7208#section-6.1" target="_blank">RFC7208 Section 6.1</a>:
+        <br/>
+        The "redirect" modifier is intended for consolidating both authorizations and policy into a common set to be shared within a single ADMD.It is possible to control both authorized hosts and policy for an arbitrary number of domains from a single record. (...) In general, the domain "A" cannot reliably use a redirect to another domain "B" not under the same administrative control.
+        <br/>
+        So if you have subdomains that are used to send mails, and they send the mail throught the same systems as specified for the "main" domain you can use the redirect option so manage everything from one record. This means that if you want to include a new mail server you only have to change the "main" SPF record.
+        <br/>
+        <b>Example</b>
+        <pre><code>la.example.org.   IN TXT  "v=spf1 redirect=example.org"
+
+ny.example.org.   IN TXT  "v=spf1 redirect=example.org"
+
+sf.example.org.   IN TXT  "v=spf1 redirect=example.org"</code></pre>
+        <b>Keep the record "clean"</b>
+        <br/>
+        Try to avoid large SPF records with for example a lot of includes, this because there is a limit of 10 DNS query's that may be done, everything above this will result in a "permerror" according to <a href="https://tools.ietf.org/html/rfc7208#section-4.6.4" target="_blank">RFC7208 Section 4.6.4</a>
+        <br/>
+        <h3>Advanced SPF: tracking</h3>
+        <b>NOTE:</b>This requires a good knowledge of your mail infra and access to the DNS query logs from your external DNS servers.
+        <br/>
+        <a href="https://tools.ietf.org/html/rfc7208#appendix-C" target="_blank">RFC7208 Appendix C</a> gives an example on how to track where mails that fail (or pass) SPF checks are beeing send from. It makes use of the macro's that are described in <a href="https://tools.ietf.org/html/rfc7208#section-7" target="_blank">Section 7</a> of the RFC. Example record:
+        <pre><code>example.org.   IN TXT  "v=spf1 exists:_h.%{h}._l.%{l}._o.%{o}._i.%{i}._spf.%{d} ?all"
+        
+Legenda:
+%{h} = HELO/EHLO domain
+%{l} = local-part of the "MAIL FROM" or "HELO" identity
+%{o} = domain of the "MAIL FROM" or "HELO" identity
+%{i} = the IP address of the SMTP client that is emitting the mail, either IPv4 or IPv6
+%{d} = the domain that provides the sought-after authorization information; initially, 
+       the domain portion of the "MAIL FROM" or "HELO" identity.</code></pre>
+       <br/>
+       <b>NOTE:</b> bind doesn't allow hostnames (A record) to start with a underscore
+       <br/>
+       A litle bit more simple record could also be used to provide a simple tracking meganism, and to prevent that you have to create different SPF records for different (sub-) domains.
+       <br/>
+       <b>Example</b>
+       <pre><code>Base SPF record:
+_spf.example.net  IN  TXT     "v=spf1 exists:_i.%{i}._h.%{h}._o.%{o}._spf.example.net -all"
+
+SPF record for all (sub-) domains:
+example.net      IN  TXT     "v=spf1 redirect=_spf.example.net"
+
+and a SPF record to catch all non existing domains:
+*.example.net    IN  TXT     "v=spf1 redirect=_spf.example.net"
+
+Explanation:
+_i.%{i}._h.%{h}._o.%{o}._spf.example.net
+     |       |       |-> domain of &lt;sender&gt;
+     |       |-> HELO/EHLO domain
+     |-> &lt;ip&gt;
+
+&lt;sender&gt; = the "MAIL FROM" or "HELO" identity.
+&lt;ip&gt;     = the IP address of the SMTP client that is emitting the mail, either IPv4 or IPv6.
+
+Usage:
+
+mail from arnold@example.net via smtp1.example.net [10.1.1.1]
+_i.10.1.1.1._h.smtp1.example.net._o.example.net._spf.example.net >> answer: A record to 127.0.0.1 [SPF pass]
+
+mail from arnold@example.com via smtp1.example.net [10.1.1.1]
+_i.10.1.1.1._h.smtp1.example.net._o.example.com._spf.example.net >> answer: A record to 127.0.0.1 [SPF pass]
+
+mail from arnold@example.net via mail.baddomain.ru [123.123.123.123]
+_i.123.123.123.123._h.mail.baddomain.ru._o.example.net._spf.example.net >> answer: NXDOMAIN [SPF fail]</code></pre>
+        This does require a couple of additional DNS records, for every combination of server IP, HELO domain and sender domain that you want to be able to send email from.
+        <br/>
+        <h3>Use-case:</h3>
+        <b>Maildomains:</b> @example.net AND @example.com
+        <br/>
+        <b>HELO (ip):</b> smtp1.example.net (10.1.1.1), smtp2.example.net (10.1.10.1), mailer1.example.net (10.1.1.2), mailer2.example.net (10.1.10.2)
+        <br/>
+        <b>Required A records:</b>
+        <pre><code>_i.10.1.1.1._h.smtp1.example.net._o.example.net._spf.example.net      IN  A   127.0.0.1
+_i.10.1.10.1._h.smtp2.example.net._o.example.net._spf.example.net     IN  A   127.0.0.1
+_i.10.1.1.2._h.mailer1.example.net._o.example.net._spf.example.net    IN  A   127.0.0.1
+_i.10.1.10.2._h.mailer2.example.net._o.example.net._spf.example.net   IN  A   127.0.0.1
+
+_i.10.1.1.1._h.smtp1.example.net._o.example.com._spf.example.net      IN  A   127.0.0.1
+_i.10.1.10.1._h.smtp2.example.net._o.example.com._spf.example.net     IN  A   127.0.0.1
+_i.10.1.1.2._h.mailer1.example.net._o.example.com._spf.example.net    IN  A   127.0.0.1
+_i.10.1.10.2._h.mailer2.example.net._o.example.com._spf.example.net   IN  A   127.0.0.1</code></pre>
+     </html>
+    </panel>
+  </row>
+</dashboard>

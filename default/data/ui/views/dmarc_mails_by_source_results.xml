@@ -1,0 +1,115 @@
+<form>
+  <label>DMARC mails by source results</label>
+  <fieldset submitButton="true" autoRun="false">
+    <input type="time" token="timeRange">
+      <label>Time Range</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+    <input type="radio" token="headerFromNot">
+      <label>Header from</label>
+      <choice value="">IS</choice>
+      <choice value="NOT">IS NOT</choice>
+      <default></default>
+    </input>
+    <input type="multiselect" token="headerFromDomain_multiSelect">
+      <label>Header from domain</label>
+      <choice value="*">ALL</choice>
+      <default>*</default>
+      <prefix>(</prefix>
+      <suffix>)</suffix>
+      <initialValue>*</initialValue>
+      <valuePrefix>header_from="</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+      <delimiter> OR </delimiter>
+      <fieldForLabel>domain</fieldForLabel>
+      <fieldForValue>domain</fieldForValue>
+      <search>
+        <query>|`dmarc_domains(domain)`</query>
+        <earliest>$timeRange.earliest$</earliest>
+        <latest>$timeRange.latest$</latest>
+      </search>
+    </input>
+    <input type="dropdown" token="spfMailServerSelect">
+      <label>SPF mail server</label>
+      <choice value="*">All</choice>
+      <choice value="yes">Yes</choice>
+      <choice value="no">No</choice>
+      <default>*</default>
+      <prefix>in_spf_record="</prefix>
+      <suffix>"</suffix>
+      <initialValue>*</initialValue>
+    </input>
+    <input type="dropdown" token="dkimResultSelect">
+      <label>DKIM result</label>
+      <choice value="*">All</choice>
+      <default>*</default>
+      <prefix>dkim_result_1="</prefix>
+      <suffix>"</suffix>
+      <initialValue>*</initialValue>
+      <fieldForLabel>dkim_result_1</fieldForLabel>
+      <fieldForValue>dkim_result_1</fieldForValue>
+      <search>
+        <query>`dmarc_log`
+| stats count by dkim_result_1</query>
+        <earliest>$timeRange.earliest$</earliest>
+        <latest>$timeRange.latest$</latest>
+      </search>
+    </input>
+    <input type="dropdown" token="spfResultSelect">
+      <label>SPF result</label>
+      <choice value="*">All</choice>
+      <prefix>spf_result_1="</prefix>
+      <suffix>"</suffix>
+      <fieldForLabel>spf_result_1</fieldForLabel>
+      <fieldForValue>spf_result_1</fieldForValue>
+      <search>
+        <query>`dmarc_log`
+| stats count by spf_result_1</query>
+        <earliest>$timeRange.earliest$</earliest>
+        <latest>$timeRange.latest$</latest>
+      </search>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <table>
+        <search>
+          <query>`dmarc_log`
+| fillnull value="none" dkim_result_1 spf_result_1
+| lookup spf_mailservers ip as source_ip OUTPUT ptr AS PTR_lookup 
+| lookup dnslookup clientip AS source_ip OUTPUT clienthost AS PTR_dns 
+| eval PTR_lookup=mvdedup(PTR_lookup), PTR=coalesce(PTR_dns, PTR_lookup), in_spf_record=if(isnotnull(PTR_lookup) OR PTR_lookup!="","yes","no")
+| stats values(PTR) AS PTR, values(in_spf_record) AS in_spf_record, sum(count) AS total by source_ip header_from dkim_result_1 spf_result_1
+| search $headerFromNot$ $headerFromDomain_multiSelect$ $spfMailServerSelect$ $dkimResultSelect$ $spfResultSelect$
+| sort - total
+| table header_from source_ip PTR in_spf_record dkim_result_1 spf_result_1 total
+| rename header_from AS "FROM: header", in_spf_record AS "In SPF record", dkim_result_1 AS "DKIM result", spf_result_1 AS "SPF result", total AS "Total mails"</query>
+          <earliest>$timeRange.earliest$</earliest>
+          <latest>$timeRange.latest$</latest>
+          <sampleRatio>1</sampleRatio>
+        </search>
+        <option name="count">25</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="percentagesRow">false</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <format type="color" field="In SPF record">
+          <colorPalette type="map">{"yes":#65A637,"no":#D93F3C}</colorPalette>
+        </format>
+        <format type="color" field="DKIM result">
+          <colorPalette type="map">{"pass":#65A637,"none":#ED8440,"fail":#D93F3C,"temperror":#F7BC38,"softfail":#D93F3C,"permerror":#555555}</colorPalette>
+        </format>
+        <format type="color" field="SPF result">
+          <colorPalette type="map">{"pass":#65A637,"none":#ED8440,"fail":#D93F3C,"temperror":#F7BC38,"softfail":#D93F3C,"permerror":#555555}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+</form>

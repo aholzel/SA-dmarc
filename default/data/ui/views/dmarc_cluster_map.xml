@@ -1,0 +1,65 @@
+<form>
+  <label>DMARC cluster map</label>
+  <fieldset submitButton="true" autoRun="false">
+    <input type="time" token="timeRange">
+      <label>Time Range</label>
+      <default>
+        <earliest>-36h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+    <input type="multiselect" token="headerFromDomain_multiSelect">
+      <label>Header from domain</label>
+      <choice value="*">ALL</choice>
+      <default>*</default>
+      <prefix>(</prefix>
+      <suffix>)</suffix>
+      <initialValue>*</initialValue>
+      <valuePrefix>header_from="</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+      <delimiter> OR </delimiter>
+      <fieldForLabel>domain</fieldForLabel>
+      <fieldForValue>domain</fieldForValue>
+      <search>
+        <query>|`dmarc_domains(domain)`</query>
+        <earliest>0</earliest>
+        <latest></latest>
+      </search>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <map>
+        <search>
+          <query>`dmarc_log` $headerFromDomain_multiSelect$
+| eval mail_server_group=if(mail_server_group==header_from, "SPF-server", "NON SPF-server" )
+| stats sum(count) AS total, values(mail_server_group) AS mail_server_group by source_ip
+| iplocation source_ip
+| geostats globallimit=0 sum(total) by mail_server_group</query>
+          <earliest>$timeRange.earliest$</earliest>
+          <latest>$timeRange.latest$</latest>
+          <sampleRatio>1</sampleRatio>
+        </search>
+        <option name="drilldown">all</option>
+        <option name="height">750</option>
+        <option name="mapping.choroplethLayer.neutralPoint">0</option>
+        <option name="mapping.choroplethLayer.shapeOpacity">0.75</option>
+        <option name="mapping.choroplethLayer.showBorder">1</option>
+        <option name="mapping.data.maxClusters">100</option>
+        <option name="mapping.fieldColors">{"SPF-server":0x38D502,"NON SPF-server":0xD51B02}</option>
+        <option name="mapping.map.center">(23.24,2.11)</option>
+        <option name="mapping.map.panning">1</option>
+        <option name="mapping.map.scrollZoom">0</option>
+        <option name="mapping.map.zoom">3</option>
+        <option name="mapping.markerLayer.markerMaxSize">20</option>
+        <option name="mapping.markerLayer.markerMinSize">10</option>
+        <option name="mapping.markerLayer.markerOpacity">0.8</option>
+        <option name="mapping.showTiles">1</option>
+        <option name="mapping.tileLayer.maxZoom">20</option>
+        <option name="mapping.tileLayer.minZoom">0</option>
+        <option name="mapping.tileLayer.tileOpacity">1</option>
+        <option name="mapping.type">marker</option>
+      </map>
+    </panel>
+  </row>
+</form>
