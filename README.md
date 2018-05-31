@@ -1,6 +1,6 @@
 # SA-dmarc
 ## Description
-Splunk app for visualization of ingested DMARC RUA mails. This app contains a couple of dashboards to visualize the DMARC RUA data after it has been processed by the TA-dmarc. 
+Splunk app for visualization of ingested DMARC RUA mails. This app contains a couple of dashboards to visualize the DMARC RUA data after it has been processed by the TA-dmarc (see https://github.com/aholzel/TA-dmarc). 
 
 ## Installation
 The app needs to be installed on the Splunk Searchhead
