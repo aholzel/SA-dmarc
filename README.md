@@ -35,6 +35,12 @@ The app contains a script to do the SPF record lookup and fill the "spf_mailserv
   * ptr : The PTR or description of the IP OR CIDR
   * ip : The IP or CIDR provided in the SPF record
   * mail_server_group : The maildomain
+- **spf_resolving_filter.csv** : Lookup to filter out known false positives from the SPF Resolving dashboard. The lookup contains 5 columns
+  * sending_server_ip : The IP of the sending server as it appears in the DNS lookup
+  * sending_server_helo : The HELO of the sending server as it appears in the DNS lookup (supports wildcard)
+  * sending_mail_domain : The maildomain as it appears in the DNS lookup (supports wildcard)
+  * recieving_server_ip : The IP of the mail server that is recieving the "mails" and doeing the lookups
+  * note : A note to add why this row was added.
   
 ### Macros
 - **dmarc_log**   : Macro that needs to contain the index and sourcetype of the processed rua files.
