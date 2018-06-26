@@ -31,6 +31,7 @@ SOFTWARE.
 # 2018-05-29    1.1         Arnold      Added some logging
 # 2018-05-30    1.2         Arnold      Changed the dmarc_domain csv to be able to exclude domains from the spf lookup
 #                                       domains with a exists: item in the spf record can't be resolved.    
+# 2018-06-25    1.3         Arnold      Disabled some super debug log
 #
 ##################################################################
 import subprocess, shlex, re, csv, sys, argparse, os
@@ -59,14 +60,14 @@ txt_lookup_type = args.check
 # Check if there is a Splunk session key available
 if args.sessionKey is None or len(args.sessionKey) == 0:
     sessionKey = sys.stdin.readline().strip()
-    #temp_logger.debug("Splunk SessionKey provided by stdin")
+    temp_logger.debug("Splunk SessionKey provided by stdin")
     # Super debug:
-    temp_logger.debug("Splunk SessionKey provided by stdin. SessionKey: " + str(sessionKey))
+    #temp_logger.debug("Splunk SessionKey provided by stdin. SessionKey: " + str(sessionKey))
 elif len(args.sessionKey) != 0:
     sessionKey = args.sessionKey
-    #temp_logger.debug("Splunk SessionKey provided by command line argument")
+    temp_logger.debug("Splunk SessionKey provided by command line argument")
     # Super debug:
-    temp_logger.debug("Splunk SessionKey provided by command line argument. SessionKey: " + str(sessionKey))
+    #temp_logger.debug("Splunk SessionKey provided by command line argument. SessionKey: " + str(sessionKey))
 else:
     temp_logger.critical("No Splunk SessionKey provided. Exit script")
     sys.exit(1)

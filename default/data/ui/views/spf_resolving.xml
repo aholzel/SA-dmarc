@@ -1,12 +1,15 @@
 <form>
   <search id="base_spf_resolving">
     <query>
-      `external_dns_log` record_request="A" [| `dmarc_domains(domain)` | eval query="spf.".domain | fields - domain] 
+      `external_dns_log` record_request="A" [| `dmarc_domains` | eval query="spf.".domain | fields - domain] 
       | eval query=lower(query) 
       | rex field=query "(?&lt;sending_server_ip&gt;\d+\.\d+\.\d+\.\d+)\.\_h\.(?&lt;sending_server_helo&gt;.*?)\.\_o\.(?&lt;sending_mail_domain&gt;.*?)(?:\.spf\.|\.\_spf\.)"
       | fillnull value="none" response_error
-      | stats values(sending_server_helo) AS sending_server_helo, values(src_ip) AS recieving_server_ip, count by sending_server_ip response_error sending_mail_domain
-      | table sending_server_ip sending_server_helo sending_mail_domain response_error recieving_server_ip count
+      $lookup_src_ip$
+      | eval src_ip=if(isnotnull(domain), src_ip." [".domain."]", src_ip), possible_mailserver=if(like(clienthost,"%mail%") OR like(clienthost,"%smtp%"), "yes","no")
+      | stats values(sending_server_helo) AS sending_server_helo, values(src_ip) AS recieving_server_ip, count by sending_server_ip response_error sending_mail_domain possible_mailserver
+      | lookup spf_resolving_filter sending_server_ip sending_server_helo sending_mail_domain recieving_server_ip
+      | table sending_server_ip sending_server_helo sending_mail_domain response_error recieving_server_ip count possible_mailserver note
     </query>
     <earliest>$timeRange.earliest$</earliest>
     <latest>$timeRange.latest$</latest>
@@ -62,20 +65,34 @@
         <query>| stats count by sending_mail_domain</query>
       </search>
     </input>
+    <input type="radio" token="lookup_src_ip">
+      <label>Resolve recieving server IP domain</label>
+      <choice value="| lookup dnslookup clientip as src_ip | rex field=clienthost &quot;(?&lt;domain&gt;[A-Za-z0-9-]+\.([A-Za-z]{3,}$|[A-Za-z]{2}\.[A-Za-z]{2}$|[A-za-z]{2}$))&quot;">Yes</choice>
+      <choice value="">No</choice>
+      <default></default>
+    </input>
+    <input type="radio" token="filterKnownProblems">
+      <label>Filter known problems</label>
+      <choice value="| search NOT [| inputlookup spf_resolving_filter ]">Yes</choice>
+      <choice value="">No</choice>
+      <default>| search NOT [| inputlookup spf_resolving_filter ]</default>
+      <initialValue>| search NOT [| inputlookup spf_resolving_filter ]</initialValue>
+    </input>
   </fieldset>
   <row>
     <panel>
       <table>
         <search base="base_spf_resolving">
-          <query>| sort - count
+          <query>$filterKnownProblems$
+            | sort - count
 | lookup spf_mailservers ip AS sending_server_ip OUTPUTNEW mail_server_group AS mail_server_group_ip
 | lookup spf_mailservers mail_server_group AS sending_mail_domain OUTPUTNEW mail_server_group AS mail_server_group_domain
 | eval mail_server_group_domain=mvdedup(mail_server_group_domain)
-| eval spf_server=if(sending_mail_domain IN(mail_server_group_ip), "Yes", "No"), known_mail_domain=if(sending_mail_domain IN(mail_server_group_domain), "Yes", "No"), recieving_server_ip=if(mvcount(recieving_server_ip)&gt;10,mvcount(recieving_server_ip)." recieving servers", recieving_server_ip)
+| eval spf_server=if(sending_mail_domain IN(mail_server_group_ip), "Yes", "No"), known_mail_domain=if(sending_mail_domain IN(mail_server_group_domain), "Yes", "No")
 | iplocation sending_server_ip
-| table sending_server_ip sending_server_helo Country sending_mail_domain  spf_server response_error recieving_server_ip count 
+| table sending_server_ip sending_server_helo Country sending_mail_domain  spf_server response_error recieving_server_ip possible_mailserver count note
 | search $spfServer$ $heloMulti$ $maildomainMulti$ sending_server_helo!="%*"
-| rename sending_server_ip AS "Sending server IP", sending_server_helo AS "HELO/EHLO", sending_mail_domain AS "Email domain", spf_server AS "SPF server?", response_error AS "DNS response", recieving_server_ip AS "Recieving Mail server", count AS "DNS Hits",</query>
+| rename sending_server_ip AS "Sending server IP", sending_server_helo AS "HELO/EHLO", sending_mail_domain AS "FROM email domain", spf_server AS "SPF server?", response_error AS "DNS response", recieving_server_ip AS "Recieving Mail server", possible_mailserver AS "Suspected mailserver", count AS "DNS Hits",</query>
         </search>
         <option name="count">100</option>
         <option name="dataOverlayMode">none</option>

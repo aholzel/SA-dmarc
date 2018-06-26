@@ -1,0 +1,2 @@
+sending_server_ip,sending_server_helo,sending_mail_domain,recieving_server_ip,note
+192.168.1.1,*,*,94.198.159.208,SIDN SPF crawler
