@@ -91,20 +91,21 @@
             <b>Strict:</b> In strict mode, only an exact DNS domain match is considered to produce Identifier Alignment.</li>
         </ul>
         <h2>Normal SPF info</h2>
-        <b>DNS records:</b> Select the DNS entry's that are allowed to send mail for this domain.<br/>
+        <b>DNS records from the domain:</b> Select the DNS entry's that are currently already in the DNS and allowed to send mail for this domain.<br/>
         <b>IPv4 servers:</b> A comma seperated list of IPv4 addresses that are allowed to send emails for this domain. <br/>
         <b>IPv6 servers:</b> A comma seperated list of IPv6 addresses that are allowed to send emails for this domain. <br/>
+        <b>A records:</b> A comma seperated list of hostnames from which the A record is allowed to send emails for this domain <br/>
         <b>Include from:</b> Include the SPF record results from the provided domain. <br/>
         <b>All other systems:</b> What policy needs to be applied to all other systems.<br/>
         <ul>
           <li>
-            <b>Deny:</b> All systems not in the list that send mails for this domain will result in a SPF fail.</li>
+            <b>Deny:</b> All systems not in the list that send mails for this domain will result in a SPF <i>fail</i>.</li>
           <li>
-            <b>Neutral:</b> All systems not in the list that send mails for this domain will result in a SPF neutral.</li>
+            <b>Neutral:</b> All systems not in the list that send mails for this domain will result in a SPF <i>neutral</i>.</li>
           <li>
-            <b>Softfail:</b> All systems not in the list that send mails for this domain will result in a SPF softfail.</li>
+            <b>Softfail:</b> All systems not in the list that send mails for this domain will result in a SPF <i>softfail</i>.</li>
           <li>
-            <b>Allow (bad!):</b> All systems not in the list that send mails for this domain will result in a SPF pass.</li>
+            <b>Allow (bad!):</b> All systems not in the list that send mails for this domain will result in a SPF <i>pass</i>.</li>
         </ul>
         <h2>Advanced SPF info</h2>
         <b>Redirect OR Exists record:</b> Choose if you want a Redirect or an Exists record
@@ -150,7 +151,7 @@
           <li>
             <b>"IP of the sending server":</b> Comma seperated list with the public IP addesses of the mail servers.</li>
           <li>
-            <b>"IP of the sending server" AND "HELO/EHLO of the sending server":</b> If this Splunk server can resolve the hostnames of the IP's than a comma seperated list of IP's. If this Splunk server can not (correctly) resolve the hostnames the list needs to be provided in the following way: IP1:HOSTNAME1,IP2:HOSTNAME2</li>
+            <b>"IP of the sending server" AND "HELO/EHLO of the sending server":</b> If this Splunk server can resolve the hostnames of the IP's than a comma seperated list of IP's. If this Splunk server can not (correctly) resolve the hostnames the list needs to be provided in the following way: IP1:HOSTNAME1,IP2:HOSTNAME2,IP3,IP4....</li>
         </ul>
         <h2>DNS records</h2>
         This panel shows all the DNS entry's that need to be created with a short note about it.
@@ -219,7 +220,7 @@
     <panel depends="$show_spf_normal$">
       <title>Normal SPF info</title>
       <input type="multiselect" token="spf_dns_records" searchWhenChanged="true">
-        <label>DNS records</label>
+        <label>DNS records from the domain</label>
         <choice value="-">None</choice>
         <choice value="+a">A record</choice>
         <choice value="+mx">MX record</choice>
@@ -241,6 +242,13 @@
         <prefix>"</prefix>
         <suffix>"</suffix>
         <default>-</default>
+        <initialValue>-</initialValue>
+      </input>
+      <input type="text" token="spf_a">
+        <label>A record (comma sep.)</label>
+        <default>-</default>
+        <prefix>"</prefix>
+        <suffix>"</suffix>
         <initialValue>-</initialValue>
       </input>
       <input type="text" token="spf_include" searchWhenChanged="true">
@@ -310,7 +318,7 @@
       </input>
       <input type="dropdown" token="spf_macro_2" searchWhenChanged="true">
         <label>Macro 2</label>
-        <choice value="-">Not Used</choice>
+        <choice value="-">Not Used&l t;/choice>
         <choice value="i">IP of the sending server</choice>
         <choice value="h">HELO/EHLO of the sending server</choice>
         <choice value="o">Domain part of &lt;sender&gt;</choice>
@@ -318,7 +326,8 @@
         <choice value="l">Local part of &lt;sender&gt;</choice>
         <choice value="s">&lt;sender&gt;</choice>
         <default>-</default>
-        <prefix>"</prefix>         <suffix>"</suffix>
+        <prefix>"</prefix>
+        <suffix>"</suffix>
         <initialValue>-</initialValue>
       </input>
       <input type="dropdown" token="spf_macro_3" searchWhenChanged="true">
@@ -433,11 +442,13 @@
     | eval spf_dns_records=if(len($spf_dns_records$) &gt; 1,replace($spf_dns_records$,"-",""),null())
     | eval spf_ipv4=if($spf_ipv4$!="-", replace($spf_ipv4$,","," ip4:"),null()), spf_ipv4=if(isnotnull(spf_ipv4),"ip4:".spf_ipv4,null())
     | eval spf_ipv6=if($spf_ipv6$!="-", replace($spf_ipv6$,","," ip6:"),null()), spf_ipv6=if(isnotnull(spf_ipv6),"ip6:".spf_ipv6,null())
+    | eval spf_a=if($spf_a$!="-", replace($spf_a$,","," a:"),null()), spf_a=if(isnotnull(spf_a),"a:".spf_a,null())
     | eval spf_include=if($spf_include$!="-", replace($spf_include$,","," include:"),null()), spf_include=if(isnotnull(spf_include),"include:".spf_include,null())
     | eval spf_record_info="v=spf1",
       spf_record_info=if(isnotnull(spf_dns_records),mvappend(spf_record_info,spf_dns_records),spf_record_info),
       spf_record_info=if(isnotnull(spf_ipv4),mvappend(spf_record_info,spf_ipv4),spf_record_info),
       spf_record_info=if(isnotnull(spf_ipv6),mvappend(spf_record_info,spf_ipv6),spf_record_info),
+      spf_record_info=if(isnotnull(spf_a),mvappend(spf_record_info,spf_a),spf_record_info),
       spf_record_info=if(isnotnull(spf_include),mvappend(spf_record_info,spf_include),spf_record_info),
       spf_record_info=mvappend(spf_record_info,$spf_all$)
     | eval record="\"".mvjoin(spf_record_info," ")."\"", dns_domain=$domain$, dns_record_type="IN TXT", record_note="SPF record for mailserver validation"
@@ -446,7 +457,7 @@
   ]
 | append
   [ | makeresults
-    | eval DESCRIPTION="This is part 1 of the advanced SPF record generating search"
+    | eval DESCRIPTION="This is part 1/3 of the advanced SPF record generating search"
     | eval macro1=case($spf_macro_1$=="-", null(), $spf_macro_prefix$=="yes","_".$spf_macro_1$.".%{".$spf_macro_1$."}", $spf_macro_prefix$=="no","%{".$spf_macro_1$."}"),
       macro2=case($spf_macro_2$=="-", null(), $spf_macro_prefix$=="yes","_".$spf_macro_2$.".%{".$spf_macro_2$."}", $spf_macro_prefix$=="no","%{".$spf_macro_2$."}"),
       macro3=case($spf_macro_3$=="-", null(), $spf_macro_prefix$=="yes","_".$spf_macro_3$.".%{".$spf_macro_3$."}", $spf_macro_prefix$=="no","%{".$spf_macro_3$."}"),
@@ -475,14 +486,15 @@
       full_macro_translated=replace(full_macro_translated,"%{i}","192.168.123.123"),
       full_macro_translated=replace(full_macro_translated,"%{h}","helo.".$domain$),
       record_note=record_note.replace(full_macro_translated,"(redirect\=)(.*)","\2")."\"",
-      record_note=if($spf_redirect_exists$=="exists:",mvappend(record_note," ","NOTE: with an exists record the ".$spf_all$." must not be added, or the exists record will be ignored"),record_note)
+      record_note=case($spf_redirect_exists$=="exists:",mvappend(record_note," ","NOTE: with an exists record the "."-all"." must not be added, or the exists record will be ignored"), $spf_redirect_exists$=="redirect=",mvappend(record_note," ","NOTE: you also need a valid SPF record on the redirect URL"),  true(),record_note)
+      
     | eval record="\"".mvjoin(spf_record_info," ")."\"", dns_domain=$domain$, dns_record_type="IN TXT"
     | eval dns_domain=if("$show_spf_advanced$"=="true",dns_domain,null()), dns_record_type=if("$show_spf_advanced$"=="true",dns_record_type,null()),record=if("$show_spf_advanced$"=="true",record,null()), record_note=if("$show_spf_advanced$"=="true",record_note,null())
     | table dns_domain, dns_record_type, record, record_note
   ]
 | append
   [ | makeresults
-    | eval DESCRIPTION="This is part 2 of the advanced SPF record generating search" 
+    | eval DESCRIPTION="This is part 2/3 of the advanced SPF record generating search" 
     | eval mailserver_list=if(len($mailserver$) &gt; 1,$mailserver$,null()),
       server=if(isnotnull(mailserver_list),split(mailserver_list,","),"-")
     | mvexpand server
@@ -508,20 +520,55 @@
       full_macro_translated=if(in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{s}","john.doe@sub.".$domain$),full_macro_translated),
       full_macro_translated=if(in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{l}","john.doe"),full_macro_translated)
     | eval dns_domain=full_macro_translated, record=if($spf_redirect_exists$=="exists:","127.0.0.1",null()), dns_record_type="IN A", 
-      record_note="The exists option needs to have any A record to work. See RFC7208 section 5.7",
+      record_note="The exists option needs to have any A record to work. See RFC7208 section 5.7", record_note=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"This record is for the HELO/EHLO SPF check."),record_note),
+      record_note=if(in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) OR in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"NOTE: you need to create a DNS record for EVERY user that is allowed to send mails!"),record_note)
+    | eval dns_domain=if("$show_spf_advanced$"=="true",dns_domain,null()), dns_record_type=if("$show_spf_advanced$"=="true",dns_record_type,null()),record=if("$show_spf_advanced$"=="true",record,null()), record_note=if("$show_spf_advanced$"=="true",record_note,null())
+    | table dns_domain, dns_record_type, record, record_note
+  ]
+| append
+  [ | makeresults
+    | eval DESCRIPTION="This is part 3/3 of the advanced SPF record generating search" 
+    | eval mailserver_list=if(len($mailserver$) &gt; 1,$mailserver$,null()),
+      server=if(isnotnull(mailserver_list),split(mailserver_list,","),"-")
+    | mvexpand server
+    | eval server_ip=if(server!="-",replace(server,"([^\:]+)(?:\:(.*)|$)","\1"),null()), server_name=if(len(replace(server,"([^\:]+)(?:\:(.*)|$)","\2")) != 0,replace(server,"([^\:]+)(?:\:(.*)|$)","\2"), null())
+    | foreach server_ip [ | lookup dnslookup clientip AS &lt;&lt;FIELD&gt;&gt; ]
+    | eval server_name=coalesce(server_name,clienthost,"FAKE_HALO.".$domain$)
+    | eval macro1=case($spf_macro_1$=="-", null(), $spf_macro_prefix$=="yes","_".$spf_macro_1$.".%{".$spf_macro_1$."}", $spf_macro_prefix$=="no","%{".$spf_macro_1$."}"),
+      macro2=case($spf_macro_2$=="-", null(), $spf_macro_prefix$=="yes","_".$spf_macro_2$.".%{".$spf_macro_2$."}", $spf_macro_prefix$=="no","%{".$spf_macro_2$."}"),
+      macro3=case($spf_macro_3$=="-", null(), $spf_macro_prefix$=="yes","_".$spf_macro_3$.".%{".$spf_macro_3$."}", $spf_macro_prefix$=="no","%{".$spf_macro_3$."}"),
+      macro4=case($spf_macro_4$=="-", null(), $spf_macro_prefix$=="yes","_".$spf_macro_4$.".%{".$spf_macro_4$."}", $spf_macro_prefix$=="no","%{".$spf_macro_4$."}"),
+      spf_domain=if($spf_domain$!="-",trim($spf_domain$,". "),null())
+    | eval mailFromDomain=if($mail_domain$!="-",$mail_domain$,$domain$)
+    | eval full_macro=if(isnotnull(macro1),mvappend(full_macro,macro1),full_macro),
+      full_macro=if(isnotnull(macro2),mvappend(full_macro,macro2),full_macro),
+      full_macro=if(isnotnull(macro3),mvappend(full_macro,macro3),full_macro),
+      full_macro=if(isnotnull(macro4),mvappend(full_macro,macro4),full_macro),
+      full_macro=if(isnotnull(spf_domain),mvappend(full_macro,spf_domain),full_macro),
+      full_macro=mvjoin(full_macro,"."),
+      full_macro_translated=full_macro,
+      full_macro_translated=if(in("o",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) AND $mail_domain$!="-",replace(full_macro_translated,"%{o}",$mail_domain$),replace(full_macro_translated,"%{o}",$domain$)),
+      full_macro_translated=if(in("d",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{d}",$domain$),full_macro_translated),
+      full_macro_translated=if(in("i",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{i}",server_ip),full_macro_translated),
+      full_macro_translated=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{h}",mailFromDomain),full_macro_translated),
+      full_macro_translated=if(in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{s}","john.doe@sub.".mailFromDomain),full_macro_translated),
+      full_macro_translated=if(in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{l}","john.doe"),full_macro_translated)
+    | eval dns_domain=full_macro_translated, record=if($spf_redirect_exists$=="exists:","127.0.0.1",null()), dns_record_type="IN A", 
+      record_note="The exists option needs to have any A record to work. See RFC7208 section 5.7", record_note=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"This record is for the RFC5321.MailFrom SPF check."),record_note),
       record_note=if(in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) OR in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"NOTE: you need to create a DNS record for EVERY user that is allowed to send mails!"),record_note)
     | eval dns_domain=if("$show_spf_advanced$"=="true",dns_domain,null()), dns_record_type=if("$show_spf_advanced$"=="true",dns_record_type,null()),record=if("$show_spf_advanced$"=="true",record,null()), record_note=if("$show_spf_advanced$"=="true",record_note,null())
     | table dns_domain, dns_record_type, record, record_note
   ]
 | stats values(record_note) AS record_note by dns_domain, dns_record_type, record
-| eval record_note=trim(record_note)
+| eval record_note=trim(record_note), dns_domain=dns_domain."."
 | table dns_domain, dns_record_type, record, record_note
 | rename dns_domain AS "DNS Domain", dns_record_type AS "Record Type", record AS "DNS Record", record_note AS "Note"</query>
           <earliest>-24h@h</earliest>
           <latest>now</latest>
         </search>
-        <option name="count">10</option>
+        <option name="count">25</option>
         <option name="drilldown">none</option>
+        <option name="rowNumbers">true</option>
       </table>
     </panel>
   </row>
