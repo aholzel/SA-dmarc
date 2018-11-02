@@ -7,5 +7,6 @@
     <collection label="RFC info">
         <view source="unclassified" match="rfc_info"/>
     </collection>
+    <view name="dmarc_and_spf_dns_help" />
     <view name="search"/>
 </nav>

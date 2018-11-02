@@ -318,7 +318,7 @@
       </input>
       <input type="dropdown" token="spf_macro_2" searchWhenChanged="true">
         <label>Macro 2</label>
-        <choice value="-">Not Used&l t;/choice>
+        <choice value="-">Not Used</choice>
         <choice value="i">IP of the sending server</choice>
         <choice value="h">HELO/EHLO of the sending server</choice>
         <choice value="o">Domain part of &lt;sender&gt;</choice>
