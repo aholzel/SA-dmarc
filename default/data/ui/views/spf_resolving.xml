@@ -1,7 +1,7 @@
 <form>
   <search id="base_spf_resolving">
     <query>
-      `external_dns_log` record_request="A" [| `dmarc_domains` | eval query="spf.".domain | fields - domain] 
+      `external_dns_log` record_request="A" [| `dmarc_domains(domain)` | eval query="spf.".domain | fields - domain] 
       | eval query=lower(query) 
       | rex field=query "(?&lt;sending_server_ip&gt;\d+\.\d+\.\d+\.\d+)\.\_h\.(?&lt;sending_server_helo&gt;.*?)\.\_o\.(?&lt;sending_mail_domain&gt;.*?)(?:\.spf\.|\.\_spf\.)"
       | fillnull value="none" response_error

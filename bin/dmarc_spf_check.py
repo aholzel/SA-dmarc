@@ -159,7 +159,7 @@ def search_dns_record(domain, record_type, text_sub_record=""):
             script_logger.debug("Searched DNS record: " + str(record_type) + ", found value(s): " + str(return_value))
         else:
             return_value = output[2]
-            script_logger.error("Unexpected response from nslookup, response: " +str(return_value))
+            script_logger.error("Unexpected response from nslookup, response: " + str(return_value))
     else:
         return_value = "No " + str(record_type) + " record found for " + str(domain)
         script_logger.error(str(return_value))
