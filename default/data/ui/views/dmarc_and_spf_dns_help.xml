@@ -1,5 +1,5 @@
 <form>
-  <label>DMARC and SPF DNS help Clone</label>
+  <label>DMARC and SPF DNS help</label>
   <search>
     <query>
       | makeresults
@@ -577,7 +577,7 @@
            dns_domain=full_macro_translated, 
            record=if($spf_redirect_exists$=="exists:","127.0.0.1",null()), 
            dns_record_type="IN A", 
-           record_note="The exists option needs to have any A record to work. See RFC7208 section 5.7", record_note=i f(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"This record is for the RFC5321.MailFrom SPF check."),record_note),
+           record_note="The exists option needs to have any A record to work. See RFC7208 section 5.7", record_note=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"This record is for the RFC5321.MailFrom SPF check."),record_note),
            record_note=if(in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) OR in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"NOTE: you need to create a DNS record for EVERY user that is allowed to send mails if you don't use the wildcard."),record_note),
            dns_domain=if("$show_spf_advanced$"=="true",dns_domain,null()), 
            dns_record_type=if("$show_spf_advanced$"=="true",dns_record_type,null()),
