@@ -129,7 +129,9 @@
           <li>
             <b>Current domain:</b> The domain that the policy is configured on. This can be usefull if you have multiple domains that all share the same policy.</li>
           <li>
-            <b>Local part of &lt;sender&gt;:</b> The part before the "@" in the from mail address. <ul><b>NOTE:</b>If you select this option it will be placed at the start of the record, will not have the "_l" prefix and will by default have a wildcard. This is all to prevent DNSSEC problems, and to prevent that you need to add a DNS record for every email address within you company.</ul></li>
+            <b>Local part of &lt;sender&gt;:</b> The part before the "@" in the from mail address. <ul>
+              <b>NOTE:</b>If you select this option it will be placed at the start of the record, will not have the "_l" prefix and will by default have a wildcard. This is all to prevent DNSSEC problems, and to prevent that you need to add a DNS record for every email address within you company.</ul>
+          </li>
           <li>
             <b>&lt;sender&gt;:</b> The complete from mail address. (this is not adviced because you will need to create a DNS record for every user that is allowed to send mails)</li>
         </ul>
@@ -476,7 +478,7 @@
            full_macro=mvjoin(full_macro,"."),
            full_macro=$spf_redirect_exists$.full_macro
     | eval spf_record_info="v=spf1",
-           spf_record_info=if($spf_redirect_exists$!="exists:",mvappend(spf_record_info,full_macro,$spf_all$),mvappend(spf_record_info,full_macro)),
+           spf_record_info=if($spf_redirect_exists$!="exists:",mvappend(spf_record_info,full_macro),mvappend(spf_record_info,full_macro,$spf_all$)),
            record_note=if(in("o",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) OR in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) OR in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note," sender=john.doe@sub.".$domain$),record_note),
            record_note=if(in("i",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note," mailserver IP=192.168.123.123"),record_note),
            record_note=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note," mailserver HELO=helo.".$domain$),record_note),
@@ -491,7 +493,7 @@
            full_macro_translated=replace(full_macro_translated,"%{i}","192.168.123.123"),
            full_macro_translated=replace(full_macro_translated,"%{h}","helo.".$domain$),
            record_note=record_note.replace(full_macro_translated,"(redirect\=)(.*)","\2")."\"",
-           record_note=case($spf_redirect_exists$=="exists:",mvappend(record_note," ","NOTE: with an exists record the "."-all"." must not be added, or the exists record will be ignored"), $spf_redirect_exists$=="redirect=",mvappend(record_note," ","NOTE: you also need a valid SPF record on the redirect URL"),  true(),record_note),
+           record_note=case($spf_redirect_exists$=="exists:",mvappend(record_note," "), $spf_redirect_exists$=="redirect=",mvappend(record_note," ","NOTE: you also need a valid SPF record on the redirect URL","NOTE: with an redirect record the "."-all"." must NOT be added, or the exists record will be ignored"),  true(),record_note),
            record="\"".mvjoin(spf_record_info," ")."\"", dns_domain=$domain$, 
            dns_record_type="IN TXT",
            dns_domain=if("$show_spf_advanced$"=="true",dns_domain,null()), 
