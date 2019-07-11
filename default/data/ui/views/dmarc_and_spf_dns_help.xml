@@ -493,7 +493,7 @@
            full_macro_translated=replace(full_macro_translated,"%{i}","192.168.123.123"),
            full_macro_translated=replace(full_macro_translated,"%{h}","helo.".$domain$),
            record_note=record_note.replace(full_macro_translated,"(redirect\=)(.*)","\2")."\"",
-           record_note=case($spf_redirect_exists$=="exists:",mvappend(record_note," "), $spf_redirect_exists$=="redirect=",mvappend(record_note," ","NOTE: you also need a valid SPF record on the redirect URL","NOTE: with an redirect record the "."-all"." must NOT be added, or the exists record will be ignored"),  true(),record_note),
+           record_note=case($spf_redirect_exists$=="exists:",mvappend(record_note," "), $spf_redirect_exists$=="redirect=",mvappend(record_note," ","NOTE: you also need a valid SPF record on the redirect URL","NOTE: with an redirect record the "."-all"." must NOT be added, or the redirect record will be ignored"),  true(),record_note),
            record="\"".mvjoin(spf_record_info," ")."\"", dns_domain=$domain$, 
            dns_record_type="IN TXT",
            dns_domain=if("$show_spf_advanced$"=="true",dns_domain,null()), 
