@@ -404,7 +404,7 @@
 | eval dns_domain=if(substr($domain$,1,1)!="*","*default*.".$domain$,$domain$), 
   dns_record_type="IN TXT",
   record=if(substr(dns_domain,1,9)=="*default*","\"v=spf1 -all\"",spf_record),
-  record_note=if(substr(dns_domain,1,9)=="*default*","Default SPF record to prevent mailing from non-existing subdomains.",record_note), 
+  record_note=if(substr(dns_domain,1,9)=="*default*",mvappend("Default SPF record to prevent mailing from non-existing subdomains."," ","NOTE: you also need to create a \"*\" record for your subdomains. e.g.: *.acc.".$domain$),record_note), 
   dns_domain=if(substr(dns_domain,1,9)=="*default*","*.".$domain$,dns_domain)
 | append 
   [ | makeresults
