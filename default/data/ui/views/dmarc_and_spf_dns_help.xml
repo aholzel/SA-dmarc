@@ -1,602 +1,209 @@
 <form>
-  <label>DMARC and SPF DNS help</label>
-  <search>
-    <query>
-      | makeresults
-      | eval checkBox=if(isnull($show_panel|s$),"",$show_panel|s$)
-      | eval checkBox=replace(checkBox,"\s",",")
-      | eval show_info=case(match(checkBox,"info"),"true")
-      | eval show_dmarc=case(match(checkBox,"dmarc"),"true")
-      | eval show_spf_normal=case(match(checkBox,"spf_normal"),"true")
-      | eval show_spf_advanced=case(match(checkBox,"spf_advanced"),"true")
-      | eval show_other_records=case(match(checkBox,"other_records"),"true")
-    </query>
-    <earliest>-1s</earliest>
-    <latest>now</latest>
-    <done>
-      <condition match="$job.resultCount$==0">
-        <unset token="show_info"></unset>
-        <unset token="show_dmarc"></unset>
-        <unset token="show_spf_normal"></unset>
-        <unset token="show_spf_advanced"></unset>
-      </condition>
-      <condition>
-        <eval token="show_info">case(isnotnull($result.show_info$),"true")</eval>
-        <eval token="show_dmarc">case(isnotnull($result.show_dmarc$),"true")</eval>
-        <eval token="show_spf_normal">case(isnotnull($result.show_spf_normal$) AND isnull($result.show_spf_advanced$),"true", true(),null())</eval>
-        <eval token="show_spf_advanced">case(isnotnull($result.show_spf_advanced$),"true")</eval>
-      </condition>
-    </done>
+  <search id="dmarc_report_baseSearch1">
+    <query>`dmarc_log` $headerFromDomain_multiSelect$
+| head 1
+| eval adkim=case(published_adkim=="r","relaxed", published_adkim=="s","strict", 1==1,"unknown"), aspf=case(published_aspf=="r","relaxed", published_aspf=="s","strict", 1==1,"unknown")
+| table published_p adkim aspf</query>
+    <earliest>$timeRange.earliest$</earliest>
+    <latest>$timeRange.latest$</latest>
   </search>
-  <fieldset submitButton="false" autoRun="false">
-    <input type="text" token="domain" searchWhenChanged="true">
-      <label>Domain</label>
-      <prefix>"</prefix>
-      <suffix>"</suffix>
+  <search id="dmarc_report_baseSearch2">
+    <query>`dmarc_log` $headerFromDomain_multiSelect$
+| fillnull spf_result_1 spf_domain_1 spf_domain_2 spf_result_2 dkim_domain_1 dkim_result_1 dkim_domain_2 dkim_result_2 spf_scope_1 spf_scope_2 value="not_set" 
+| eval spf_domain_1=lower(spf_domain_1), spf_domain_2=lower(spf_domain_2), spf_result_1=lower(spf_result_1), spf_result_2=lower(spf_result_2), dkim_domain_1=lower(dkim_domain_1), dkim_domain_2=lower(dkim_domain_2), dkim_result_1=lower(dkim_result_1), dkim_result_2=lower(dkim_result_2), source_ip=lower(source_ip), header_from=lower(header_from), published_adkim=if(lower(published_adkim)=="null" OR lower(published_adkim)=="none" OR isnull(published_adkim), "r", published_adkim), published_aspf=if(lower(published_aspf)=="null" OR lower(published_aspf)=="none" OR isnull(published_aspf), "r", published_aspf) 
+| stats values(source_hostname) AS source_hostname, values(published_p) AS published_dmarc_policy, values(published_adkim) AS published_dmarc_adkim, values(published_aspf) AS published_dmarc_aspf, sum(count) as messages BY spf_domain_1 spf_result_1 spf_scope_1 spf_domain_2 spf_result_2 spf_scope_2 dkim_domain_1 dkim_result_1 dkim_domain_2 dkim_result_2 source_ip header_from org_name evaluated_disposition
+| lookup spf_mailservers ip as source_ip OUTPUT ptr AS PTR_lookup mail_server_group 
+| fillnull mail_server_group value="NON SPF-server" 
+$ip_lookup$ 
+| iplocation source_ip 
+| eval PTR_lookup=mvdedup(PTR_lookup), PTR_lookup=if(PTR_lookup="-", null(), PTR_lookup), PTR=coalesce(PTR_lookup, source_hostname, PTR_dns)
+| eval `spf_dkim_dmarc_checks`
+| eval evaluated_disposition=if(evaluated_disposition=="none" , "deliver", evaluated_disposition), 
+    spf_domain=if(spf_domain_2=="not_set", spf_domain_1, spf_domain_1."/".spf_domain_2), 
+    dkim_domain=if(dkim_domain_2=="not_set", dkim_domain_1, dkim_domain_1."/".dkim_domain_2),
+    spf_result=if(spf_result_2=="not_set", spf_result_1, spf_result_1."/".spf_result_2),
+    dkim_result=if(dkim_result_2=="not_set", dkim_result_1, dkim_result_1."/".dkim_result_2),
+    spf_scope=if(spf_scope_2=="not_set", spf_scope_1, spf_scope_1."/".spf_scope_2)
+| rex field=PTR "(?&lt;domain&gt;\w+)\.(?&lt;tld&gt;co\.uk|\w+)$"
+| eval sending_mailserver_domain=domain.".".tld
+| fillnull sending_mailserver_domain value="UNKNOWN"
+| eval option1=if($groupBy_Select$=="spf_dmarc" OR $groupBy_Select$=="dkim_dmarc","",$groupBy_Select$)
+| eventstats sum(messages) as messages_spf_dmarc by spf_dmarc option1
+| eventstats sum(messages) as messages_dkim_dmarc by dkim_dmarc option1
+| eval messages_spf_dmarc=spf_dmarc.":".messages_spf_dmarc, messages_dkim_dmarc=dkim_dmarc.":".messages_dkim_dmarc
+| eval messages_spf_dmarc_aligned=substr(mvindex(messages_spf_dmarc, mvfind(messages_spf_dmarc, "^aligned.*")),9), messages_dkim_dmarc_aligned=substr(mvindex(messages_dkim_dmarc, mvfind(messages_dkim_dmarc, "^aligned.*")),9)
+| table sending_mailserver_domain dc_header_from messages dc_source_ip spf_score dkim_score header_from source_ip PTR Country dkim_dmarc dkim_result dkim_result_1 dkim_result_2 spf_dmarc spf_result spf_result_1 spf_result_2 spf_domain spf_domain_1 spf_domain_2 dkim_domain dkim_domain_1 dkim_domain_2 org_name evaluated_disposition messages_spf_dmarc messages_dkim_dmarc messages_spf_dmarc_aligned messages_dkim_dmarc_aligned dmarc_correct spf_scope spf_scope_1 spf_scope_2 mail_server_group spf_result
+    </query>
+    <earliest>$timeRange.earliest$</earliest>
+    <latest>$timeRange.latest$</latest>
+  </search>
+  <label>DMARC overview</label>
+  <fieldset submitButton="true" autoRun="true">
+    <input type="time" token="timeRange">
+      <label>Time Range</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
     </input>
-    <input type="checkbox" token="show_panel" searchWhenChanged="true">
-      <label>Show panels</label>
-      <choice value="info">Dashboard info</choice>
-      <choice value="dmarc">DMARC info</choice>
-      <choice value="spf_normal">Normal SPF</choice>
-      <choice value="spf_advanced">Advanced SPF</choice>
-      <delimiter> </delimiter>
-      <change>
-        <condition match="isnull($show_panel$)">
-          <unset token="show_info"></unset>
-          <unset token="show_dmarc"></unset>
-          <unset token="show_spf_normal"></unset>
-          <unset token="show_spf_advanced"></unset>
-        </condition>
-      </change>
-      <default>info</default>
+    <input type="multiselect" token="headerFromDomain_multiSelect">
+      <label>Header from domain</label>
+      <choice value="*">ALL</choice>
+      <default>*</default>
+      <prefix>(</prefix>
+      <suffix>)</suffix>
+      <initialValue>*</initialValue>
+      <valuePrefix>header_from="</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+      <delimiter> OR </delimiter>
+      <fieldForLabel>domain</fieldForLabel>
+      <fieldForValue>domain</fieldForValue>
+      <search>
+        <query>|`dmarc_domains(domain)`</query>
+        <earliest>0</earliest>
+        <latest></latest>
+      </search>
+    </input>
+    <input type="dropdown" token="groupBy_Select" searchWhenChanged="false">
+      <label>Group by</label>
+      <choice value="mail_server_group">(non) SPF server</choice>
+      <choice value="evaluated_disposition">Action taken</choice>
+      <choice value="dkim_dmarc">DKIM allignment</choice>
+      <choice value="dkim_result">DKIM result</choice>
+      <choice value="header_from">Header from</choice>
+      <choice value="org_name">Report sending organization</choice>
+      <choice value="spf_dmarc">SPF allignment</choice>
+      <choice value="spf_result">SPF result</choice>
+      <choice value="sending_mailserver_domain">Sending server domain</choice>
+      <default>evaluated_disposition</default>
+      <initialValue>evaluated_disposition</initialValue>
+    </input>
+    <input type="radio" token="ip_lookup">
+      <label>DNS lookup Source IP</label>
+      <choice value="| eval PTR_dns=if(isnull(source_hostname), &quot;no DNS lookup performed&quot;, null())">No</choice>
+      <choice value="| lookup dnslookup clientip AS source_ip OUTPUT clienthost AS PTR_dns">Yes</choice>
+      <default>| eval PTR_dns=if(isnull(source_hostname), "no DNS lookup performed", null())</default>
+      <initialValue>| eval PTR_dns=if(isnull(source_hostname), "no DNS lookup performed", null())</initialValue>
     </input>
   </fieldset>
   <row>
-    <panel depends="$show_info$">
-      <html>
-        <h1>Dashboard info</h1>
-        In this dashboad all DNS records are shown that need to be created for DMARC and SPF to work correct.<br/>
-        Select the dashboard panel(s) that you want to show and/or edit the settings for. If you modify a field, the information will be updated immediately and you can see the record needed in the DNS.<br/>
-        <b>Note:</b> The quotation marks in the dns record field also need to be included in the DNS record!<br/>
-        For DMARC details see <a href="https://tools.ietf.org/html/rfc7489" target="_blank">RFC7489</a>
-        <br/>
-        For SPF details see <a href="https://tools.ietf.org/html/rfc7208" target="_blank">RFC7208</a>
-        <br/>
-        <h2>DMARC info</h2>
-        <b>Domain policy:</b> The policy that you want for the domain, and if no specific subdomain policy is specified for all subdomains. (required) The availible options are:
-        <ul>
-          <li>
-            <i>No Policy:</i> Deliver the mail and take no action if DMARC fails</li>
-          <li>
-            <i>Quarantine:</i> Deliver the mail but put the mail in the SPAM folder/mark as SPAM if DMARC fails</li>
-          <li>
-            <i>Reject:</i> Don't deliver the mail at all if DMARC fails</li>
-        </ul>
-        <b>Subdomains policy:</b> The policy that needs to be applied to the subdomains if that policy needs to be different than the domain policy. The availible options are the same as for the domain level. (optional) <br/>
-        <b>RUA mail address:</b> A comma separated list of email addresses that you want te RUA mails to be send to. (optional) <br/>
-        <b>RUF mail address:</b> A comma separated list of email addresses that you want te RUF mails to be send to. (optional) <br/>
-        <b>DKIM Allignment:</b> The policy for the DKIM allignment taht needs to be applied, default is relxed. (See <a href="https://tools.ietf.org/html/rfc7489#section-3.1.1" target="_blank">RFC7489 Section 3.1.1</a> for more details)<br/>
-        <ul>
-          <li>
-            <b>Relaxed:</b> In relaxed mode, the Organizational Domains of both the [DKIM]-authenticated signing domain (taken from the value of the "d=" tag in the signature) and that of the RFC5322.From domain must be equal if   the identifiers are to be considered aligned.</li>
-          <li>
-            <b>Strict:</b> In strict mode, only an exact match between both of the Fully Qualified Domain Names (FQDNs) is considered to produce Identifier Alignment.</li>
-        </ul>
-        <b>SPF Allignment:</b> The policy for the SPF allignment that needs to be applied, default is relaxed. (See <a href="https://tools.ietf.org/html/rfc7489#section-3.1.2" target="_blank">RFC7489 Section 3.1.2</a> for more details) <br/>
-        <ul>
-          <li>
-            <b>Relaxed:</b> In relaxed mode, the [SPF]-authenticated domain and RFC5322.From domain must have the same Organizational Domain.</li>
-          <li>
-            <b>Strict:</b> In strict mode, only an exact DNS domain match is considered to produce Identifier Alignment.</li>
-        </ul>
-        <h2>Normal SPF info</h2>
-        <b>DNS records from the domain:</b> Select the DNS entry's that are currently already in the DNS and allowed to send mail for this domain.<br/>
-        <b>IPv4 servers:</b> A comma seperated list of IPv4 addresses that are allowed to send emails for this domain. <br/>
-        <b>IPv6 servers:</b> A comma seperated list of IPv6 addresses that are allowed to send emails for this domain. <br/>
-        <b>A records:</b> A comma seperated list of hostnames from which the A record is allowed to send emails for this domain <br/>
-        <b>Include from:</b> Include the SPF record results from the provided domain. <br/>
-        <b>All other systems:</b> What policy needs to be applied to all other systems.<br/>
-        <ul>
-          <li>
-            <b>Deny:</b> All systems not in the list that send mails for this domain will result in a SPF <i>fail</i>.</li>
-          <li>
-            <b>Neutral:</b> All systems not in the list that send mails for this domain will result in a SPF <i>neutral</i>.</li>
-          <li>
-            <b>Softfail:</b> All systems not in the list that send mails for this domain will result in a SPF <i>softfail</i>.</li>
-          <li>
-            <b>Allow (bad!):</b> All systems not in the list that send mails for this domain will result in a SPF <i>pass</i>.</li>
-        </ul>
-        <h2>Advanced SPF info</h2>
-        <b>Redirect OR Exists record:</b> Choose if you want a Redirect or an Exists record
-        <ul>
-         <li>
-            <b>Redirect:</b> Redirect to a other SPF record within the same administrative domain (See <a href="https://tools.ietf.org/html/rfc7208#section-6.1" target="_blank">RFC7208 Section 6.1</a>)</li>
-          <li>
-            <b>Exists:</b> Check that the provided record has an A record in the DNS (See <a href="https://tools.ietf.org/html/rfc7208#section-5.7" target="_blank">RFC7208 Section 5.7</a>)</li>
-        </ul>
-        <b>Add Macro prefixes:</b> Add a prefix before each macro option, if you select "IP of the sending server" than before that entry you will get "_i." this makes the field extraction more easy if you also have you DNS logs in Splunk. <br/>
-        <b>Macro 1-4:</b> Select what you want option(s) you want to use for constucting the DNS record. (See <a href="https://tools.ietf.org/html/rfc7208#section-7.2" target="_blank">RFC7208 Section 7.2</a>) for more info
-        <ul>
-          <li>
-            <b>Not Used:</b> Don't use this Macro.</li>
-          <li>
-            <b>IP of the sending server:</b> The IP addess of the server that is sending out the email.</li>
-          <li>
-            <b>HELO/EHLO of the sending server:</b> The HELO/EHLO of the server that is sending out the email.</li>
-          <li>
-            <b>Domain part of &lt;sender&gt;:</b> The part after the "@" in the from mail address.</li>
-          <li>
-            <b>Current domain:</b> The domain that the policy is configured on. This can be usefull if you have multiple domains that all share the same policy.</li>
-          <li>
-            <b>Local part of &lt;sender&gt;:</b> The part before the "@" in the from mail address. <ul>
-              <b>NOTE:</b>If you select this option it will be placed at the start of the record, will not have the "_l" prefix and will by default have a wildcard. This is all to prevent DNSSEC problems, and to prevent that you need to add a DNS record for every email address within you company.</ul>
-          </li>
-          <li>
-            <b>&lt;sender&gt;:</b> The complete from mail address. (this is not adviced because you will need to create a DNS record for every user that is allowed to send mails)</li>
-        </ul>
-        <b>Domainsuffix:</b> Static domain suffix where these entry's will reside in the DNS for example: "_spf.example.com" this will be appended to the macro's <br/>
-       <b>All other systems:</b> What policy needs to be applied to all other systems.<br/>
-        <ul>
-          <li>
-            <b>Deny:</b> All systems not in the list that send mails for this domain will result in a SPF fail.</li>
-          <li>
-            <b>Neutral:</b> All systems not in the list that send mails for this domain will result in a SPF neutral.</li>
-          <li>
-            <b>Softfail:</b> All systems not in the list that send mails for this domain will result in a SPF softfail.</li>
-          <li>
-            <b>Allow (bad!):</b> All systems not in the list that send mails for this domain will result in a SPF pass.</li>
-        </ul>
-        <b>Mail domain:</b> The mail domain that is used in the from address. This is only needed if this is different than the domain the SPF record is on AND if you select the "Domain part of &lt;sender&gt;" macro.<br/>
-        <b>Mailserver list:</b> A list with the IP and helo of the mail servers the list needs to have the following format, depending on the choosen macro and DNS lookup ability of the splunk server:
-        <ul>Macro choosen
-          <li>
-            <b>"IP of the sending server":</b> Comma seperated list with the public IP addesses of the mail servers.</li>
-          <li>
-            <b>"IP of the sending server" AND "HELO/EHLO of the sending server":</b> If this Splunk server can resolve the hostnames of the IP's than a comma seperated list of IP's. If this Splunk server can not (correctly) resolve the hostnames the list needs to be provided in the following way: IP1;HOSTNAME1,IP2;HOSTNAME2,IP3,IP4....</li>
-        </ul>
-        <h2>DNS records</h2>
-        This panel shows all the DNS entry's that need to be created with a short note about it.
-      </html>
-    </panel>
-  </row>
-  <row>
-    <panel depends="$show_dmarc$">
-      <title>DMARC info</title>
-      <input type="dropdown" token="dmarc_p" searchWhenChanged="true">
-        <label>Domain policy</label>
-        <choice value="none">No policy</choice>
-        <choice value="quarantine">Quarantine</choice>
-        <choice value="reject">Reject</choice>
-        <default>none</default>
-        <initialValue>none</initialValue>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-      </input>
-      <input type="dropdown" token="dmarc_sp" searchWhenChanged="true">
-        <label>Subdomains policy</label>
-        <choice value="-">Same as domain</choice>
-        <choice value="none">No policy</choice>
-        <choice value="quarantine">Quarantine</choice>
-        <choice value="reject">Reject</choice>
-        <default>-</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="text" token="dmarc_rua" searchWhenChanged="true">
-        <label>RUA mail address (comma sep.)</label>
-        <prefix>"rua=mailto:</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-        <default>-</default>
-      </input>
-      <input type="text" token="dmarc_ruf" searchWhenChanged="true">
-        <label>RUF mail address (comma sep.)</label>
-        <prefix>"ruf=mailto:</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-        <default>-</default>
-      </input>
-      <input type="radio" token="dmarc_adkim" searchWhenChanged="true">
-        <label>DKIM allignment</label>
-        <choice value="r">Relaxed</choice>
-        <choice value="s">Strict</choice>
-        <default>r</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>r</initialValue>
-      </input>
-      <input type="radio" token="dmarc_aspf" searchWhenChanged="true">
-        <label>SPF Allignment</label>
-        <choice value="r">Relaxed</choice>
-        <choice value="s">Strict</choice>
-        <default>r</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>r</initialValue>
-      </input>
-    </panel>
-  </row>
-  <row>
-    <panel depends="$show_spf_normal$">
-      <title>Normal SPF info</title>
-      <input type="multiselect" token="spf_dns_records" searchWhenChanged="true">
-        <label>DNS records from the domain</label>
-        <choice value="-">None</choice>
-        <choice value="+a">A record</choice>
-        <choice value="+mx">MX record</choice>
-        <delimiter> </delimiter>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <default>-</default>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="text" token="spf_ipv4" searchWhenChanged="true">
-        <label>IPv4 servers (comma sep.)</label>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <default>-</default>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="text" token="spf_ipv6" searchWhenChanged="true">
-        <label>IPv6 servers (comma sep.)</label>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <default>-</default>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="text" token="spf_a">
-        <label>A record (comma sep.)</label>
-        <default>-</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="text" token="spf_include" searchWhenChanged="true">
-        <label>Include from (comma sep.)</label>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <default>-</default>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="dropdown" token="spf_all" searchWhenChanged="true">
-        <label>All other systems</label>
-        <choice value="-all">Deny</choice>
-        <choice value="?all">Neutral</choice>
-        <choice value="~all">Softfail</choice>
-        <choice value="+all">Allow (bad!)</choice>
-        <default>-all</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-all</initialValue>
-      </input>
-    </panel>
-  </row>
-  <row>
-    <panel depends="$show_spf_advanced$">
-      <title>Advanced SPF info</title>
-      <input type="radio" token="spf_redirect_exists" searchWhenChanged="true">
-        <label>Redirect OR Exists record</label>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <default>exists:</default>
-        <initialValue>exists:</initialValue>
-        <choice value="exists:">Exists</choice>
-        <choice value="redirect=">Redirect</choice>
-        <change>
-          <condition label="Exists">
-            <set token="exists_token">true</set>
-            <unset token="redirect_token"></unset>
-          </condition>
-          <condition label="Redirect">
-            <unset token="exists_token"></unset>
-            <set token="redirect_token">true</set>
-          </condition>
-        </change>
-      </input>
-      <input type="radio" token="spf_macro_prefix" searchWhenChanged="true">
-        <label>Add Macro prefixes</label>
-        <choice value="yes">Yes</choice>
-        <choice value="no">No</choice>
-        <default>yes</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>yes</initialValue>
-      </input>
-      <input type="dropdown" token="spf_macro_1" searchWhenChanged="true">
-        <label>Macro 1</label>
-        <choice value="-">Not Used</choice>
-        <choice value="i">IP of the sending server</choice>
-        <choice value="h">HELO/EHLO of the sending server</choice>
-        <choice value="o">Domain part of &lt;sender&gt;</choice>
-        <choice value="d">Current domain</choice>
-        <choice value="l">Local part of &lt;sender&gt;</choice>
-        <choice value="s">&lt;sender&gt;</choice>
-        <default>-</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="dropdown" token="spf_macro_2" searchWhenChanged="true">
-        <label>Macro 2</label>
-        <choice value="-">Not Used</choice>
-        <choice value="i">IP of the sending server</choice>
-        <choice value="h">HELO/EHLO of the sending server</choice>
-        <choice value="o">Domain part of &lt;sender&gt;</choice>
-        <choice value="d">Current domain</choice>
-        <choice value="l">Local part of &lt;sender&gt;</choice>
-        <choice value="s">&lt;sender&gt;</choice>
-        <default>-</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="dropdown" token="spf_macro_3" searchWhenChanged="true">
-        <label>Macro 3</label>
-        <choice value="-">Not Used</choice>
-        <choice value="i">IP of the sending server</choice>
-        <choice value="h">HELO/EHLO of the sending server</choice>
-        <choice value="o">Domain part of &lt;sender&gt;</choice>
-        <choice value="d">Current domain</choice>
-        <choice value="l">Local part of &lt;sender&gt;</choice>
-        <choice value="s">&lt;sender&gt;</choice>
-        <default>-</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="dropdown" token="spf_macro_4" searchWhenChanged="true">
-        <label>Macro 4</label>
-        <choice value="-">Not Used</choice>
-        <choice value="i">IP of the sending server</choice>
-        <choice value="h">HELO/EHLO of the sending server</choice>
-        <choice value="o">Domain part of &lt;sender&gt;</choice>
-        <choice value="d">Current domain</choice>
-        <choice value="l">Local part of &lt;sender&gt;</choice>
-        <choice value="s">&lt;sender&gt;</choice>
-        <default>-</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="text" token="spf_domain" searchWhenChanged="true">
-        <label>Domainsuffix (optional)</label>
-        <default>-</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="dropdown" token="spf_all" searchWhenChanged="true">
-        <label>All other systems</label>
-        <choice value="-all">Deny</choice>
-        <choice value="?all">Neutral</choice>
-        <choice value="~all">Softfail</choice>
-        <choice value="+all">Allow (bad!)</choice>
-        <default>-all</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-all</initialValue>
-      </input>
-      <input type="text" token="mail_domain">
-        <label>Mail domain (if different from Domain)</label>
-        <default>-</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-      </input>
-      <input type="text" token="mailserver" depends="$exists_token$">
-        <label>Mailserver list [see dashboard info for format]</label>
-        <default>-</default>
-        <prefix>"</prefix>
-        <suffix>"</suffix>
-        <initialValue>-</initialValue>
-      </input>
+    <panel>
+      <single>
+        <title>DMARC:</title>
+        <search base="dmarc_report_baseSearch1">
+          <query>| table published_p</query>
+        </search>
+        <option name="colorBy">value</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="numberPrecision">0</option>
+        <option name="rangeColors">["0x65a637","0x6db7c6","0xf7bc38","0xf58f39","0xd93f3c"]</option>
+        <option name="rangeValues">[0,30,70,100]</option>
+        <option name="showSparkline">1</option>
+        <option name="showTrendIndicator">1</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">absolute</option>
+        <option name="unitPosition">after</option>
+        <option name="useColors">0</option>
+        <option name="useThousandSeparators">1</option>
+      </single>
+      <single>
+        <title>DKIM:</title>
+        <search base="dmarc_report_baseSearch1">
+          <query>| table adkim</query>
+        </search>
+        <option name="colorBy">value</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="numberPrecision">0</option>
+        <option name="rangeColors">["0x65a637","0x6db7c6","0xf7bc38","0xf58f39","0xd93f3c"]</option>
+        <option name="rangeValues">[0,30,70,100]</option>
+        <option name="showSparkline">1</option>
+        <option name="showTrendIndicator">1</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">absolute</option>
+        <option name="unitPosition">after</option>
+        <option name="useColors">0</option>
+        <option name="useThousandSeparators">1</option>
+      </single>
+      <single>
+        <title>SPF:</title>
+        <search base="dmarc_report_baseSearch1">
+          <query>| table aspf</query>
+        </search>
+        <option name="colorBy">value</option>
+        <option name="colorMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="numberPrecision">0</option>
+        <option name="rangeColors">["0x65a637","0x6db7c6","0xf7bc38","0xf58f39","0xd93f3c"]</option>
+        <option name="rangeValues">[0,30,70,100]</option>
+        <option name="showSparkline">1</option>
+        <option name="showTrendIndicator">1</option>
+        <option name="trendColorInterpretation">standard</option>
+        <option name="trendDisplayMode">absolute</option>
+        <option name="unitPosition">after</option>
+        <option name="useColors">0</option>
+        <option name="useThousandSeparators">1</option>
+      </single>
     </panel>
   </row>
   <row>
     <panel>
-      <title>DNS records</title>
-      <table>
-        <search>
-          <query>| makeresults
-| eval DESCRIPTION="This is the default SPF record generating search"
-| eval dns_domain=if(substr($domain$,1,1)!="*","*default*.".$domain$,$domain$), 
-  dns_record_type="IN TXT",
-  record=if(substr(dns_domain,1,9)=="*default*","\"v=spf1 -all\"",spf_record),
-  record_note=if(substr(dns_domain,1,9)=="*default*",mvappend("Default SPF record to prevent mailing from non-existing subdomains."," ","NOTE: you also need to create a \"*\" record for your subdomains. e.g.: *.acc.".$domain$),record_note), 
-  dns_domain=if(substr(dns_domain,1,9)=="*default*","*.".$domain$,dns_domain)
-| append 
-  [ | makeresults
-    | eval DESCRIPTION="This is the DMARC RUA record generating search for cross domain RUA mails"
-    | eval rua_maildomain=if($dmarc_rua$!="rua=mailto:-",replace($dmarc_rua$,"(.*\@.*?)([A-Za-z0-9-]+\.([A-Za-z]{3,}$$|[A-Za-z]{2}\.[A-Za-z]{2}$$|[A-za-z]{2}$$))","\2"),null()), 
-      dns_domain=if(isnotnull(rua_maildomain) AND rua_maildomain!=replace($domain$,"(.*?)([A-Za-z0-9-]+\.([A-Za-z]{3,}$$|[A-Za-z]{2}\.[A-Za-z]{2}$$|[A-za-z]{2}$$))","\2"),$domain$."._report._dmarc.".rua_maildomain,null()),
-      dns_record_type=if(isnotnull(dns_domain),"IN TXT",null()),
-      record=if(isnotnull(dns_domain),"\"v=DMARC1\"",null()),
-      record_note="DMARC record to allow the cross domain sending of RUA and/OR RUF mails (rfc7489 section 7.1)."
-    | eval dns_domain=if("$show_dmarc$"=="true",dns_domain,null()), dns_record_type=if("$show_dmarc$"=="true",dns_record_type,null()),record=if("$show_dmarc$"=="true",record,null()), record_note=if("$show_dmarc$"=="true",record_note,null())
-  ]
-| append 
-  [ | makeresults
-    | eval DESCRIPTION="This is the DMARC RUF record generating search for cross domain RUF mails"
-    | eval ruf_maildomain=if($dmarc_ruf$!="ruf=mailto:-",replace($dmarc_ruf$,"(.*\@.*?)([A-Za-z0-9-]+\.([A-Za-z]{3,}$$|[A-Za-z]{2}\.[A-Za-z]{2}$$|[A-za-z]{2}$$))","\2"),null()), 
-      dns_domain=if(isnotnull(ruf_maildomain) AND ruf_maildomain!=replace($domain$,"(.*?)([A-Za-z0-9-]+\.([A-Za-z]{3,}$$|[A-Za-z]{2}\.[A-Za-z]{2}$$|[A-za-z]{2}$$))","\2"),$domain$."._report._dmarc.".ruf_maildomain,null()),
-      dns_record_type=if(isnotnull(dns_domain),"IN TXT",null()),
-      record=if(isnotnull(dns_domain),"\"v=DMARC1\"",null()),
-      record_note="DMARC record to allow the cross domain sending of RUA and/OR RUF mails (rfc7489 section 7.1)."
-    | eval dns_domain=if("$show_dmarc$"=="true",dns_domain,null()), dns_record_type=if("$show_dmarc$"=="true",dns_record_type,null()),record=if("$show_dmarc$"=="true",record,null()), record_note=if("$show_dmarc$"=="true",record_note,null())
-  ]
-  [ | makeresults
-    | eval DESCRIPTION="This is the general DMARC record generating search"
-    | eval dmarc_record_info="v=DMARC1; p=".$dmarc_p$,
-      dmarc_record_info=if($dmarc_sp$!="-",mvappend(dmarc_record_info,"sp=".$dmarc_sp$),dmarc_record_info),
-      dmarc_record_info=if(len($dmarc_rua$) &gt; 5 AND $dmarc_rua$!="rua=mailto:-",mvappend(dmarc_record_info,$dmarc_rua$),dmarc_record_info), 
-      dmarc_record_info=if(len($dmarc_ruf$) &gt; 5 AND $dmarc_ruf$!="ruf=mailto:-",mvappend(dmarc_record_info,$dmarc_ruf$),dmarc_record_info),
-      dmarc_record_info=if($dmarc_adkim$=="s",mvappend(dmarc_record_info,"adkim=s"),dmarc_record_info),
-      dmarc_record_info=if($dmarc_aspf$=="s",mvappend(dmarc_record_info,"aspf=s"),dmarc_record_info)
-    | eval record="\"".mvjoin(dmarc_record_info,"; ")."\"", dns_domain="_dmarc.".$domain$, dns_record_type="IN TXT", record_note="DMARC policy record"
-    | eval dns_domain=if("$show_dmarc$"=="true",dns_domain,null()), dns_record_type=if("$show_dmarc$"=="true",dns_record_type,null()), record=if("$show_dmarc$" =="true",record,null()), record_note=if("$show_dmarc$"=="true",record_note,null())
-    | table dns_domain dns_record_type record record_note
-  ]
-| append
-  [ | makeresults
-    | eval DESCRIPTION="This is the normal SPF record generating search"
-    | eval spf_dns_records=if(len($spf_dns_records$) &gt; 1,replace($spf_dns_records$,"-",""),null())
-    | eval spf_ipv4=if($spf_ipv4$!="-", replace($spf_ipv4$,","," ip4:"),null()), spf_ipv4=if(isnotnull(spf_ipv4),"ip4:".spf_ipv4,null())
-    | eval spf_ipv6=if($spf_ipv6$!="-", replace($spf_ipv6$,","," ip6:"),null()), spf_ipv6=if(isnotnull(spf_ipv6),"ip6:".spf_ipv6,null())
-    | eval spf_a=if($spf_a$!="-", replace($spf_a$,","," a:"),null()), spf_a=if(isnotnull(spf_a),"a:".spf_a,null())
-    | eval spf_include=if($spf_include$!="-", replace($spf_include$,","," include:"),null()), spf_include=if(isnotnull(spf_include),"include:".spf_include,null())
-    | eval spf_record_info="v=spf1",
-           spf_record_info=if(isnotnull(spf_dns_records),mvappend(spf_record_info,spf_dns_records),spf_record_info),
-           spf_record_info=if(isnotnull(spf_ipv4),mvappend(spf_record_info,spf_ipv4),spf_record_info),
-           spf_record_info=if(isnotnull(spf_ipv6),mvappend(spf_record_info,spf_ipv6),spf_record_info),
-           spf_record_info=if(isnotnull(spf_a),mvappend(spf_record_info,spf_a),spf_record_info),
-           spf_record_info=if(isnotnull(spf_include),mvappend(spf_record_info,spf_include),spf_record_info),
-           spf_record_info=mvappend(spf_record_info,$spf_all$),
-           record="\"".mvjoin(spf_record_info," ")."\"", 
-           dns_domain=$domain$, 
-           dns_record_type="IN TXT", 
-           record_note="SPF record for mailserver validation"
-    | eval record=if("$show_spf_normal$"=="true",record,null()), dns_domain=if("$show_spf_normal$"=="true",dns_domain,null()), dns_record_type=if("$show_spf_normal$"=="true",dns_record_type,null()), record_note=if("$show_spf_normal$"=="true",record_note,null())
-    | table dns_domain, dns_record_type, record, record_note
-  ]
-| append
-  [ | makeresults
-    | eval DESCRIPTION="This is part 1/3 of the advanced SPF record generating search"
-    | eval macro0=if(in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),"%{l}",null()),
-           macro1=case($spf_macro_1$=="-" OR $spf_macro_1$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_1$.".%{".$spf_macro_1$."}", $spf_macro_prefix$=="no","%{".$spf_macro_1$."}"),
-           macro2=case($spf_macro_2$=="-" OR $spf_macro_2$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_2$.".%{".$spf_macro_2$."}", $spf_macro_prefix$=="no","%{".$spf_macro_2$."}"),
-           macro3=case($spf_macro_3$=="-" OR $spf_macro_3$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_3$.".%{".$spf_macro_3$."}", $spf_macro_prefix$=="no","%{".$spf_macro_3$."}"),
-           macro4=case($spf_macro_4$=="-" OR $spf_macro_4$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_4$.".%{".$spf_macro_4$."}", $spf_macro_prefix$=="no","%{".$spf_macro_4$."}"),
-           spf_domain=if($spf_domain$!="-",trim($spf_domain$,". "),null())
-    | eval full_macro=if(isnotnull(macro0),mvappend(full_macro,macro0),full_macro),
-           full_macro=if(isnotnull(macro1),mvappend(full_macro,macro1),full_macro),
-           full_macro=if(isnotnull(macro2),mvappend(full_macro,macro2),full_macro),
-           full_macro=if(isnotnull(macro3),mvappend(full_macro,macro3),full_macro),
-           full_macro=if(isnotnull(macro4),mvappend(full_macro,macro4),full_macro),
-           full_macro=if(isnotnull(spf_domain),mvappend(full_macro,spf_domain),full_macro),
-           full_macro=mvjoin(full_macro,"."),
-           full_macro=$spf_redirect_exists$.full_macro
-    | eval spf_record_info="v=spf1",
-           spf_record_info=if($spf_redirect_exists$!="exists:",mvappend(spf_record_info,full_macro),mvappend(spf_record_info,full_macro,$spf_all$)),
-           record_note=if(in("o",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) OR in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) OR in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note," sender=john.doe@sub.".$domain$),record_note),
-           record_note=if(in("i",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note," mailserver IP=192.168.123.123"),record_note),
-           record_note=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note," mailserver HELO=helo.".$domain$),record_note),
-           record_note=if(in("d",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note," current domain=".$domain$),record_note),
-           record_note=mvjoin(record_note,","), record_note="If".record_note, 
-           record_note=if($spf_redirect_exists$=="exists:",record_note." the translated record will become: \"", record_note." on the following place there needs to be a SPF record: \""),
-           full_macro_translated=full_macro,
-           full_macro_translated=replace(full_macro_translated,"%{s}","john.doe@sub.".$domain$),
-           full_macro_translated=replace(full_macro_translated,"%{l}","*"),
-           full_macro_translated=replace(full_macro_translated,"%{o}","sub.".$domain$),
-           full_macro_translated=replace(full_macro_translated,"%{d}",$domain$),
-           full_macro_translated=replace(full_macro_translated,"%{i}","192.168.123.123"),
-           full_macro_translated=replace(full_macro_translated,"%{h}","helo.".$domain$),
-           record_note=record_note.replace(full_macro_translated,"(redirect\=)(.*)","\2")."\"",
-           record_note=case($spf_redirect_exists$=="exists:",mvappend(record_note," "), $spf_redirect_exists$=="redirect=",mvappend(record_note," ","NOTE: you also need a valid SPF record on the redirect URL","NOTE: with an redirect record the "."-all"." must NOT be added, or the redirect record will be ignored"),  true(),record_note),
-           record="\"".mvjoin(spf_record_info," ")."\"", dns_domain=$domain$, 
-           dns_record_type="IN TXT",
-           dns_domain=if("$show_spf_advanced$"=="true",dns_domain,null()), 
-           dns_record_type=if("$show_spf_advanced$"=="true",dns_record_type,null()),
-           record=if("$show_spf_advanced$"=="true",record,null()), 
-           record_note=if("$show_spf_advanced$"=="true",record_note,null())
-    | table dns_domain, dns_record_type, record, record_note
-  ]
-| append
-  [ | makeresults
-    | eval DESCRIPTION="This is part 2/3 of the advanced SPF record generating search. This part creates the records for systems that use the EHLO/HELO value in the %{h} macro." 
-    | eval mailserver_list=if(len($mailserver$) &gt; 1,$mailserver$,null()),
-           server=if(isnotnull(mailserver_list),split(mailserver_list,","),"-")
-    | mvexpand server
-    | eval server_ip=if(server!="-",replace(server,"([^\;]+)(?:\;(.*)|$)","\1"),null()), 
-           server_name=if(len(replace(server,"([^\;]+)(?:\;(.*)|$)","\2"))!=0,replace(server,"([^\;]+)(?:\;(.*)|$)","\2"),null())
-    | foreach server_ip [ | lookup dnslookup clientip AS &lt;&lt;FIELD&gt;&gt; ]
-    | `ipv6_dotnotation(server_ip)`
-    | eval server_ip=if(len(ipv6_dotnotation)==63,ipv6_dotnotation,server_ip),
-           server_name=coalesce(server_name,clienthost,"FAKE_HALO.".$domain$)
-    | eval macro0=if(in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),"%{l}",null()),
-           macro1=case($spf_macro_1$=="-" OR $spf_macro_1$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_1$.".%{".$spf_macro_1$."}", $spf_macro_prefix$=="no","%{".$spf_macro_1$."}"),
-           macro2=case($spf_macro_2$=="-" OR $spf_macro_2$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_2$.".%{".$spf_macro_2$."}", $spf_macro_prefix$=="no","%{".$spf_macro_2$."}"),
-           macro3=case($spf_macro_3$=="-" OR $spf_macro_3$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_3$.".%{".$spf_macro_3$."}", $spf_macro_prefix$=="no","%{".$spf_macro_3$."}"),
-           macro4=case($spf_macro_4$=="-" OR $spf_macro_4$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_4$.".%{".$spf_macro_4$."}", $spf_macro_prefix$=="no","%{".$spf_macro_4$."}"),
-           spf_domain=if($spf_domain$!="-",trim($spf_domain$,". "),null()),
-           full_macro=if(isnotnull(macro0),mvappend(full_macro,macro0),full_macro),
-           full_macro=if(isnotnull(macro1),mvappend(full_macro,macro1),full_macro),
-           full_macro=if(isnotnull(macro2),mvappend(full_macro,macro2),full_macro),
-           full_macro=if(isnotnull(macro3),mvappend(full_macro,macro3),full_macro),
-           full_macro=if(isnotnull(macro4),mvappend(full_macro,macro4),full_macro),
-           full_macro=if(isnotnull(spf_domain),mvappend(full_macro,spf_domain),full_macro),
-           full_macro=mvjoin(full_macro,"."),
-           full_macro_translated=full_macro,
-           full_macro_translated=if(in("o",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) AND $mail_domain$!="-",replace(full_macro_translated,"%{o}",$mail_domain$),replace(full_macro_translated,"%{o}",$domain$)),
-           full_macro_translated=if(in("d",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{d}",$domain$),full_macro_translated),
-           full_macro_translated=if(in("i",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{i}",server_ip),full_macro_translated),
-           full_macro_translated=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{h}",server_name),full_macro_translated),
-           full_macro_translated=if(in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{s}","john.doe@sub.".$domain$),full_macro_translated),
-           full_macro_translated=if(in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{l}","*"),full_macro_translated),
-           dns_domain=full_macro_translated, record=if($spf_redirect_exists$=="exists:","127.0.0.1",null()), dns_record_type="IN A", 
-           record_note="The exists option needs to have any A record to work. See RFC7208 section 5.7", record_note=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"This record is for the HELO/EHLO SPF check."),record_note),
-           record_note=if(in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) OR in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"NOTE: you need to create a DNS record for EVERY user that is allowed to send mails if you don't use the wildcard."),record_note),
-           dns_domain=if("$show_spf_advanced$"=="true",dns_domain,null()), 
-           dns_record_type=if("$show_spf_advanced$"=="true",dns_record_type,null()),
-           record=if("$show_spf_advanced$"=="true",record,null()),
-           record_note=if("$show_spf_advanced$"=="true",record_note,null())
-    | table dns_domain, dns_record_type, record, record_note
-  ]
-| append
-  [ | makeresults
-    | eval DESCRIPTION="This is part 3/3 of the advanced SPF record generating search. This part creates the records for systems that use the \"mfrom\" domain in the %{h} marco." 
-    | eval mailserver_list=if(len($mailserver$) &gt; 1,$mailserver$,null()),
-           server=if(isnotnull(mailserver_list),split(mailserver_list,","),"-")
-    | mvexpand server
-    | eval server_ip=if(server!="-",replace(server,"([^\;]+)(?:\;(.*)|$)","\1"),null()), 
-         server_name=if(len(replace(server,"([^\;]+)(?:\;(.*)|$)","\2"))!=0,replace(server,"([^\;]+)(?:\;(.*)|$)","\2"), null())
-    | foreach server_ip [ | lookup dnslookup clientip AS &lt;&lt;FIELD&gt;&gt; ]
-    | `ipv6_dotnotation(server_ip)`
-    | eval server_ip=if(len(ipv6_dotnotation)==63,ipv6_dotnotation,server_ip),
-           server_name=coalesce(server_name,clienthost,"FAKE_HALO.".$domain$)
-    | eval macro0=if(in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),"%{l}",null()), 
-           macro1=case($spf_macro_1$=="-" OR $spf_macro_1$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_1$.".%{".$spf_macro_1$."}", $spf_macro_prefix$=="no","%{".$spf_macro_1$."}"),
-           macro2=case($spf_macro_2$=="-" OR $spf_macro_2$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_2$.".%{".$spf_macro_2$."}", $spf_macro_prefix$=="no","%{".$spf_macro_2$."}"),
-           macro3=case($spf_macro_3$=="-" OR $spf_macro_3$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_3$.".%{".$spf_macro_3$."}", $spf_macro_prefix$=="no","%{".$spf_macro_3$."}"),
-           macro4=case($spf_macro_4$=="-" OR $spf_macro_4$=="l",null(), $spf_macro_prefix$=="yes","_".$spf_macro_4$.".%{".$spf_macro_4$."}", $spf_macro_prefix$=="no","%{".$spf_macro_4$."}"),
-           spf_domain=if($spf_domain$!="-",trim($spf_domain$,". "),null()),
-           mailFromDomain=if($mail_domain$!="-",$mail_domain$,$domain$),
-           full_macro=if(isnotnull(macro0),mvappend(full_macro,macro0),full_macro),
-           full_macro=if(isnotnull(macro1),mvappend(full_macro,macro1),full_macro),
-           full_macro=if(isnotnull(macro2),mvappend(full_macro,macro2),full_macro),
-           full_macro=if(isnotnull(macro3),mvappend(full_macro,macro3),full_macro),
-           full_macro=if(isnotnull(macro4),mvappend(full_macro,macro4),full_macro),
-           full_macro=if(isnotnull(spf_domain),mvappend(full_macro,spf_domain),full_macro),
-           full_macro=mvjoin(full_macro,"."),
-           full_macro_translated=full_macro,
-           full_macro_translated=if(in("o",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) AND $mail_domain$!="-",replace(full_macro_translated,"%{o}",$mail_domain$),replace(full_macro_translated,"%{o}",$domain$)),
-           full_macro_translated=if(in("d",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{d}",$domain$),full_macro_translated),
-           full_macro_translated=if(in("i",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{i}",server_ip),full_macro_translated),
-           full_macro_translated=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{h}",mailFromDomain),full_macro_translated),
-           full_macro_translated=if(in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{s}","john.doe@sub.".mailFromDomain),full_macro_translated),
-           full_macro_translated=if(in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),replace(full_macro_translated,"%{l}","*"),full_macro_translated),
-           dns_domain=full_macro_translated, 
-           record=if($spf_redirect_exists$=="exists:","127.0.0.1",null()), 
-           dns_record_type="IN A", 
-           record_note="The exists option needs to have any A record to work. See RFC7208 section 5.7", record_note=if(in("h",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"This record is for the RFC5321.MailFrom SPF check."),record_note),
-           record_note=if(in("s",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$) OR in("l",$spf_macro_1$,$spf_macro_2$,$spf_macro_3$,$spf_macro_4$),mvappend(record_note,"NOTE: you need to create a DNS record for EVERY user that is allowed to send mails if you don't use the wildcard."),record_note),
-           dns_domain=if("$show_spf_advanced$"=="true",dns_domain,null()), 
-           dns_record_type=if("$show_spf_advanced$"=="true",dns_record_type,null()),
-           record=if("$show_spf_advanced$"=="true",record,null()),
-           record_note=if("$show_spf_advanced$"=="true",record_note,null())
-    | table dns_domain, dns_record_type, record, record_note
-  ]
-| stats values(record_note) AS record_note by dns_domain, dns_record_type, record
-| eval record_note=trim(record_note), dns_domain=dns_domain."."
-| table dns_domain, dns_record_type, record, record_note
-| rename dns_domain AS "DNS Domain", dns_record_type AS "Record Type", record AS "DNS Record", record_note AS "Note"</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
+      <title>Select option</title>
+      <table id="overview">
+        <search base="dmarc_report_baseSearch2">
+          <query>| stats dc(header_from) AS dc_header_from, sum(messages) AS messages, dc(source_ip) AS dc_src_ip values(messages_spf_dmarc) AS messages_spf_dmarc, values(messages_dkim_dmarc) AS messages_dkim_dmarc, values(messages_spf_dmarc_aligned) AS messages_spf_dmarc_aligned, values(messages_dkim_dmarc_aligned) AS messages_dkim_dmarc_aligned BY $groupBy_Select$
+| fillnull messages_spf_dmarc_aligned messages_dkim_dmarc_aligned value=0
+| eval dkim_score=round((messages_dkim_dmarc_aligned/messages)*100,1)."%", spf_score=round((messages_spf_dmarc_aligned/messages)*100,1)."%"
+| sort - messages 
+| table $groupBy_Select$ dc_header_from messages dc_src_ip spf_score dkim_score
+| rename dc_header_from AS "From: domain count", dc_src_ip AS "IP count", messages AS "Message count", spf_score AS "SPF allignment score", dkim_score AS "DKIM allignment score"
+| rename sending_mailserver_domain AS "Sending mailserver domain", header_from AS "Header from", org_name AS "Report sending organization", spf_dmarc AS "SPF allignment", dkim_dmarc AS "DKIM allignment", evaluated_disposition AS "Action taken",  mail_server_group AS "(non) SPF server", spf_result AS "SPF result", dkim_result AS "DKIM result"</query>
         </search>
-        <option name="count">25</option>
+        <option name="count">10</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <eval token="value">case(isnotnull($row.(non) SPF server$),$row.(non) SPF server$, isnotnull($row.Sending mailserver domain$),$row.Sending mailserver domain$, isnotnull($row.Header from$),$row.Header from$, isnotnull($row.Report sending organization$),$row.Report sending organization$, isnotnull($row.SPF allignment$),$row.SPF allignment$, isnotnull($row.DKIM allignment$),$row.DKIM allignment$, isnotnull($row.Action taken$),$row.Action taken$, isnotnull($row.SPF result$),$row.SPF result$, isnotnull($row.DKIM result$),$row.DKIM result$)</eval>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Details</title>
+      <table>
+        <search base="dmarc_report_baseSearch2">
+          <query>| search $groupBy_Select$="$value$"
+| stats values(Country) AS Country, sum(messages) AS messages, values(PTR) AS PTR, values(org_name) AS org_name, values(dmarc_correct) AS dmarc_correct, values(spf_scope) AS spf_scope BY source_ip dkim_result spf_result header_from spf_dmarc dkim_dmarc spf_domain dkim_domain evaluated_disposition 
+| eval aantalMin2=mvcount(org_name)-2, org_name=if(mvcount(org_name)&gt;2, mvindex(org_name,0).", ".mvindex(org_name,1)." + ".aantalMin2." more", mvjoin(org_name,", ")), PTR=if(isnull(PTR) OR PTR="", "UNKNOWN", PTR)
+| sort - messages 
+| table header_from source_ip PTR Country messages dkim_dmarc dkim_result dkim_domain spf_dmarc spf_result spf_domain spf_scope org_name evaluated_disposition dmarc_correct 
+| rename header_from AS "From: Domain", source_ip AS "Source IP", PTR AS "PTR of source IP", messages AS "Messages", dkim_dmarc AS "DKIM: Allignment", dkim_result AS "DKIM: Result", dkim_domain AS "DKIM: d=", spf_dmarc AS "SPF: Allignment", spf_result AS "SPF: Lookup", spf_domain AS "SPF: Domain", spf_scope AS "SPF: Scope", org_name AS "AS Received By", evaluated_disposition AS "Action taken", dmarc_correct AS "Correct Policy?"</query>
+        </search>
+        <option name="count">10</option>
+        <option name="dataOverlayMode">none</option>
         <option name="drilldown">none</option>
-        <option name="rowNumbers">true</option>
+        <option name="percentagesRow">false</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <format type="color" field="DKIM: Allignment">
+          <colorPalette type="map">{"aligned":#A2CC3E,"unaligned":#D93F3C,"not_set":#ED8440}</colorPalette>
+        </format>
+        <format type="color" field="SPF: Allignment">
+          <colorPalette type="map">{"aligned":#A2CC3E,"unaligned":#D93F3C,"not_set":#ED8440}</colorPalette>
+        </format>
+        <format type="color" field="Action taken">
+          <colorPalette type="map">{"deliver":#A2CC3E,"quarantine":#ED8440,"reject":#D93F3C}</colorPalette>
+        </format>
+        <format type="color" field="Correct Policy?">
+          <colorPalette type="map">{"Yes":#A2CC3E,"No":#D93F3C,"No (deliver)":#D93F3C,"No (reject)":#D93F3C,"No (quarantine)":#D93F3C}</colorPalette>
+        </format>
       </table>
     </panel>
   </row>
