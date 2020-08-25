@@ -1,6 +1,6 @@
 #!/usr/bin/python
 """
-Copyright 2018-2019 Arnold Holzel
+Copyright 2018- Arnold Holzel
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,12 +26,15 @@ SOFTWARE.
 # Description   : Script to do dmarc rua mail check and to do SPF record resolving.                 
 #
 # Version history
-# Date          Version     Author      Description
-# 2018-05-28    1.0         Arnold      Initial version
-# 2018-05-29    1.1         Arnold      Added some logging
-# 2018-05-30    1.2         Arnold      Changed the dmarc_domain csv to be able to exclude domains from the spf lookup
-#                                       domains with a exists: item in the spf record can't be resolved.    
-# 2018-06-25    1.3         Arnold      Disabled some super debug log
+# Date          Version     Author      Type    Description
+# 2018-05-28    1.0         Arnold              Initial version
+# 2018-05-29    1.1         Arnold              Added some logging
+# 2018-05-30    1.2         Arnold              Changed the dmarc_domain csv to be able to exclude domains from the spf lookup
+#                                               domains with a exists: item in the spf record can't be resolved.    
+# 2018-06-25    1.3         Arnold              Disabled some super debug log
+# 2020-08-25    1.4.0       Arnold      [FIX]   Fixed a problem when there where multiple A records for a domain, only 1 was returned
+#                                       [FIX]   Fixed single IP notation in the lookup, it is now written as a /32 to be able to do CIDR lookups
+#                                       [ADD]   Added lookups for AAAA records. 
 #
 ##################################################################
 import subprocess, shlex, re, csv, sys, argparse, os
@@ -138,8 +141,8 @@ def search_dns_record(domain, record_type, text_sub_record=""):
     if str(output[0]) == "0":
         if str(record_type) == "ptr":
             regex_search = "(?i)name\s*(?:\=|\:)\s*([^\s]*)"
-        elif str(record_type) == "a":
-            regex_search = "(?si)answer\:.*address\s*(?:\=|\:)\s*([^\s]*)"
+        elif str(record_type) == "a" or str(record_type) == 'aaaa':
+            regex_search = "(?si)answer\:.*address(?:es\s*|\s*)(?:\=|\:)\s*(.*)"
         elif str(record_type) == "mx":
             regex_search = "(?i)exchanger\s+(?:\=|\:)(?:\s+\d+\s+|\s+)(.*)"
         elif str(record_type) == "txt":
@@ -151,7 +154,7 @@ def search_dns_record(domain, record_type, text_sub_record=""):
         # When a MX record is requested, in most of the times you get multiple responses the below 
         # "findall" regex takes care of that.
         if regex_search:
-            if str(record_type) == "mx":
+            if str(record_type) == "mx" or str(record_type) == "a" or str(record_type) == 'aaaa':
                 return_value = re.findall(regex_search, output[2])
             else:
                 search = re.search(regex_search, output[2])
@@ -185,7 +188,7 @@ with open(dmarc_csv_file, "rb") as csvfile:
         spf_lookup_script_raw = row['spf_lookup_script']
         spf_lookup_script = make_binary(spf_lookup_script_raw)
         script_logger.debug("Current maildomain: " + str(maildomain) + ", this script should do the lookup for this domain: " +  str(spf_lookup_script_raw) + " (raw input), " + str(spf_lookup_script) + " (normalised input)")
-
+        
         if txt_lookup_type == "dmarc":
             script_logger.debug("===== Start DMARC checks =====")
             dmarc_domain = "_dmarc." + str(maildomain)
@@ -234,6 +237,7 @@ with open(dmarc_csv_file, "rb") as csvfile:
                         writer.writerow( { 'ptr': row['ptr'], 'ip': row['ip'], "mail_server_group": row['mail_server_group'] } )
                     
             script_logger.debug("===== Start SPF checks =====")
+            
             query_spf = search_dns_record(maildomain, "txt", "spf")
             
             # regex to search for the spf record
@@ -272,10 +276,24 @@ with open(dmarc_csv_file, "rb") as csvfile:
                     mx_record = search_dns_record(maildomain, "mx")
                     spf_list_append = []
                     
-                    # An mx lookup can return multiple results so find every one of them.
+                    # A mx lookup can return multiple results so find every one of them.
                     for mx in mx_record:
-                        mx_ip = search_dns_record(mx, "a")
-                        spf_list_append.append(mx_ip.strip("."))
+                        # Do a 'A' and a 'AAAA' lookup for the given MX record.
+                        mx_ip_a     = search_dns_record(mx, 'a')
+                        mx_ip_aaaa  = search_dns_record(mx,'aaaa')
+                        
+                        if mx_ip_a:
+                            for ip_a in mx_ip_a:
+                                # it is a ipv4 address so prefix it with ipv4 and put the /32 behind it for a CIDR lookup in splunk
+                                mx_ip = 'ip4:' + str(ip_a.replace('\n','')) + '/32'
+                                spf_list_append.append(mx_ip.strip("."))
+                        
+                        if mx_ip_aaaa:
+                            for ip_aaaa in mx_ip_aaaa:
+                                # it is a ipv6 address so prefix it with ipv6 and put the /128 behind it for a CIDR lookup in splunk
+                                mx_ip = 'ip6:' + str(ip_aaaa.replace('\n','')) + '/128'
+                                spf_list_append.append(mx_ip.strip("."))
+
                         
                     spf_list[spf_list.index(spf_item)] = "-"
                     spf_list += spf_list_append
