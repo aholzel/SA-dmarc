@@ -32,13 +32,17 @@ SOFTWARE.
 # 2018-05-30    1.2         Arnold              Changed the dmarc_domain csv to be able to exclude domains from the spf lookup
 #                                               domains with a exists: item in the spf record can't be resolved.    
 # 2018-06-25    1.3         Arnold              Disabled some super debug log
-# 2020-08-25    1.4.0       Arnold      [FIX]   Fixed a problem when there where multiple A records for a domain, only 1 was returned
+# 2020-08-25    1.4         Arnold      [FIX]   Fixed a problem when there where multiple A records for a domain, only 1 was returned
 #                                       [FIX]   Fixed single IP notation in the lookup, it is now written as a /32 to be able to do CIDR lookups
 #                                       [ADD]   Added lookups for AAAA records. 
+# 2020-08-26    2.0.0       Arnold      [MOD]   Changed the script to use dnspython and not be dependent on the availability of nslookup
+#                                       [FIX]   Fixed a problem with writing back the record that didn't need checking in the spf_mailservers.csv
 #
 ##################################################################
 import subprocess, shlex, re, csv, sys, argparse, os
+import socket
 from threading import Timer
+from dns import resolver,reversename
 
 import classes.splunk_info as si
 import classes.custom_logger as c_logger
@@ -108,66 +112,16 @@ if not os.path.exists(log_root_dir):
 if not os.path.exists(lookup_dir):
     os.makedirs(lookup_dir)
 
-# By default nslookups can take up to 30 seconds if there is no entry for the given request.
-# This is not something that can be changed. That would mean that if you need to do a lot of
-# lookups that it could take quite some time. To counter this we define two method's 
-# one to run a proces (nslookup in this case) and one to kill it if it runs longer than x sec
-def kill_process(process, timeout):
-    timeout["value"] = True
-    process.kill()
-
-def run_process(cmd, timeout_sec):
-    process = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    timeout = {"value": False}
-    timer = Timer(timeout_sec, kill_process, [process, timeout])
-    timer.start()
-    stdout, stderr = process.communicate()
-    timer.cancel()
+def get_sub_record(answer,sub_record):
+    p           = re.compile(".*" + sub_record + ".*", re.IGNORECASE)
+    match       = p.match(str(answer))
     
-    # return the process returncode, whether or not we hit the set timeout, stdout, stderr
-    return process.returncode, timeout["value"], stdout.decode("utf-8"), stderr.decode("utf-8")
-
-def search_dns_record(domain, record_type, text_sub_record=""):
-    global script_logger
-    record_type = record_type.lower()
-    
-    # Do an nslookup for the reqeusted domain and record type 
-    output = run_process("nslookup -q=" + str(record_type) + " " + str(domain), resolve_timeout)
-    
-    # if the process returncode was 0 (zero) we had a clean exit of the nslookup process and we can
-    # continue to process the results. Every event will give back a different line and below that
-    # line is parsed based on the requested type. If a TXT record was requested look for the 
-    # specific TXT record.
-    if str(output[0]) == "0":
-        if str(record_type) == "ptr":
-            regex_search = "(?i)name\s*(?:\=|\:)\s*([^\s]*)"
-        elif str(record_type) == "a" or str(record_type) == 'aaaa':
-            regex_search = "(?si)answer\:.*address(?:es\s*|\s*)(?:\=|\:)\s*(.*)"
-        elif str(record_type) == "mx":
-            regex_search = "(?i)exchanger\s+(?:\=|\:)(?:\s+\d+\s+|\s+)(.*)"
-        elif str(record_type) == "txt":
-            if str(text_sub_record) == "dmarc":
-                regex_search = "(?i)text\s*(?:\=|\:)\s*\"(v\=dmarc[^\"]*)"
-            elif str(text_sub_record) == "spf":
-                regex_search = "(?i)text\s*(?:\=|\:)\s*\"(v\=spf[^\"]*)"
-        
-        # When a MX record is requested, in most of the times you get multiple responses the below 
-        # "findall" regex takes care of that.
-        if regex_search:
-            if str(record_type) == "mx" or str(record_type) == "a" or str(record_type) == 'aaaa':
-                return_value = re.findall(regex_search, output[2])
-            else:
-                search = re.search(regex_search, output[2])
-                return_value = search.group(1)
-            script_logger.debug("Searched DNS record: " + str(record_type) + ", found value(s): " + str(return_value))
-        else:
-            return_value = output[2]
-            script_logger.error("Unexpected response from nslookup, response: " + str(return_value))
+    if match != None:
+        return_subrecord = match.group()
     else:
-        return_value = "No " + str(record_type) + " record found for " + str(domain)
-        script_logger.error(str(return_value))
-        
-    return return_value
+        return_subrecord = None
+      
+    return return_subrecord
 
 def make_binary(input):
     if input is False or str(input) == "0" or input.lower() == "false" or input.lower() == "f":
@@ -191,10 +145,12 @@ with open(dmarc_csv_file, "rb") as csvfile:
         
         if txt_lookup_type == "dmarc":
             script_logger.debug("===== Start DMARC checks =====")
-            dmarc_domain = "_dmarc." + str(maildomain)
-            query_dmarc = search_dns_record(dmarc_domain, "txt", "dmarc")
+            dmarc_domain    = "_dmarc." + str(maildomain)
+            query_dmarc     = resolver.query(dmarc_domain, "txt")
+            for rdata in query_dmarc:
+                dmarc_record                = get_sub_record(rdata,'dmarc')
 
-            search_rua = re.search("rua\=mailto\:([^\\\;]*)", query_dmarc)
+            search_rua = re.search("rua\=mailto\:([^\\\;]*)", dmarc_record)
 
             if search_rua:
                 rua_mailto = str(search_rua.group(1))
@@ -209,16 +165,18 @@ with open(dmarc_csv_file, "rb") as csvfile:
                 if rua_mail_domain != maildomain:
                     dmarc_report_domain = str(maildomain) + "._report._dmarc." + str(rua_mail_domain)
 
-                    report_domain_output = search_dns_record(dmarc_report_domain, "txt", "dmarc")
+                    query_dmarc = resolver.query(dmarc_domain, "txt")
+                    for rdata in query_dmarc:
+                        report_domain_output                = get_sub_record(rdata,'dmarc')
                     
-                    if report_domain_output.lower().startswith("v=dmarc1"):
+                    if dmarc_record.lower().startswith("v=dmarc1"):
                         script_logger.info(str(maildomain) + ": dmarc record is RFC7489 compliant configured")
                     else:
                         script_logger.warning(str(maildomain) + ": is not RFC7489 compliant configured " + str(report_domain_output))
                 else:
                     script_logger.info(str(maildomain) + ": dmarc record is RFC7489 compliant configured")
             else:
-                script_logger.warning("No rua email found for domain " + str(maildomain) + " in DNS record: " + str(query_dmarc))
+                script_logger.warning("No rua email found for domain " + str(maildomain) + " in DNS record: " + str(dmarc_record))
         elif txt_lookup_type == "spf" and spf_lookup_script == 1:
             # Open the SPF lookup file and remove the records for this domain so we can put in the new ones later.
             
@@ -226,22 +184,29 @@ with open(dmarc_csv_file, "rb") as csvfile:
                 # First read everything that is currently in the csv into a list 
                 spf_reader = list(csv.DictReader(spf_csv_read))
            
-            with open(spf_csv_file, "w") as spf_csv_write:
-                writer = csv.DictWriter(spf_csv_write, fieldnames=spf_csv_fields)
+            with open(spf_csv_file, "wb") as spf_csv_write:
+                writer = csv.DictWriter(spf_csv_write, fieldnames=spf_csv_fields, restval='-')
                 writer.writeheader()
                 
                 for row in spf_reader:
                     # Check each row and see if the maildomain is something we will lookup again later, if so don't write it back 
                     # to the csv file.
                     if row['mail_server_group'] != maildomain:
-                        writer.writerow( { 'ptr': row['ptr'], 'ip': row['ip'], "mail_server_group": row['mail_server_group'] } )
+                        dict_to_write = { 'ptr': row['ptr'], 'ip': row['ip'], 'mail_server_group': row['mail_server_group'] }
+                        writer.writerow( dict_to_write )
                     
             script_logger.debug("===== Start SPF checks =====")
             
-            query_spf = search_dns_record(maildomain, "txt", "spf")
+            query_spf = resolver.query(maildomain, "txt")
             
+            for rdata in query_spf:
+                search_spf_record      = get_sub_record(rdata, 'spf')
+                if search_spf_record is not None:
+                    spf_record          = search_spf_record
+                
             # regex to search for the spf record
-            search_spf = re.search("v\=spf1\s+(.*)", query_spf)
+            search_spf = re.search("v\=spf1\s+(.*)", spf_record)
+            
             # Split the given SPF result in a list to loop through
             spf_list = list(search_spf.group(1).split())
             
@@ -253,8 +218,11 @@ with open(dmarc_csv_file, "rb") as csvfile:
                     script_logger.debug("Found \"include\" record: " + str(spf_item) + ", resolve again")
                     txt, recheck_spf = spf_item.split(":")
                     
-                    query_spf = search_dns_record(recheck_spf, "txt", "spf")
-                    search_spf = re.search("v\=spf1\s+(.*)", query_spf)
+                    query_spf = resolver.query(maildomain, "txt")
+                    for rdata in query_spf:
+                        spf_record      = get_sub_record(rdata, 'spf')
+                        
+                    search_spf = re.search("v\=spf1\s+(.*)", spf_record)
                     spf_list_append = list(search_spf.group(1).split())
                     
                     spf_list[spf_list.index(spf_item)] = "-"
@@ -266,32 +234,36 @@ with open(dmarc_csv_file, "rb") as csvfile:
                     else:
                         lookup_a = maildomain
                         
-                    a_record = search_dns_record(lookup_a, "a")
+                    a_record = resolver.query(lookup_a, "a")
                     
                     spf_list[spf_list.index(spf_item)] = "-"
                     spf_list_append = [a_record.strip(".")]
                     spf_list += spf_list_append
                 elif str(spf_item) == "mx" or str(spf_item) == "+mx":
                     script_logger.debug("Found \"mx\" record: " + str(spf_item) + ", resolving....")
-                    mx_record = search_dns_record(maildomain, "mx")
+                    mx_record = resolver.query(maildomain, "mx")
+                    
                     spf_list_append = []
                     
                     # A mx lookup can return multiple results so find every one of them.
-                    for mx in mx_record:
+                    for full_mx in mx_record:
+                        strip_prio_from_mx      = re.search('\s*\d+\s*([^\s]*)', str(full_mx))
+                        mx = strip_prio_from_mx.group(1)
+                        
                         # Do a 'A' and a 'AAAA' lookup for the given MX record.
-                        mx_ip_a     = search_dns_record(mx, 'a')
-                        mx_ip_aaaa  = search_dns_record(mx,'aaaa')
+                        mx_ip_a     = resolver.query(mx, 'a')
+                        mx_ip_aaaa  = resolver.query(mx,'aaaa')
                         
                         if mx_ip_a:
                             for ip_a in mx_ip_a:
                                 # it is a ipv4 address so prefix it with ipv4 and put the /32 behind it for a CIDR lookup in splunk
-                                mx_ip = 'ip4:' + str(ip_a.replace('\n','')) + '/32'
+                                mx_ip = 'ip4:' + str(ip_a) + '/32'
                                 spf_list_append.append(mx_ip.strip("."))
                         
                         if mx_ip_aaaa:
                             for ip_aaaa in mx_ip_aaaa:
                                 # it is a ipv6 address so prefix it with ipv6 and put the /128 behind it for a CIDR lookup in splunk
-                                mx_ip = 'ip6:' + str(ip_aaaa.replace('\n','')) + '/128'
+                                mx_ip = 'ip6:' + str(ip_aaaa) + '/128'
                                 spf_list_append.append(mx_ip.strip("."))
 
                         
@@ -307,8 +279,11 @@ with open(dmarc_csv_file, "rb") as csvfile:
                     script_logger.debug("Found \"redirect\" record: " + str(spf_item) + ", resolve again.")
                     txt, recheck_spf = spf_item.split("=")
                     
-                    query_spf = search_dns_record(recheck_spf, "txt", "spf")
-                    search_spf = re.search("v\=spf1\s+(.*)", query_spf)
+                    query_spf = resolver.query(maildomain, "txt")
+            
+                    for rdata in query_spf:
+                        spf_record      = get_sub_record(rdata, 'spf')
+                    search_spf = re.search("v\=spf1\s+(.*)", spf_record)
                     spf_list_append = list(search_spf.group(1).split())
                     
                     spf_list[spf_list.index(spf_item)] = "-"
@@ -344,10 +319,16 @@ with open(dmarc_csv_file, "rb") as csvfile:
                 
                 for spf_item in spf_list:
                     script_logger.debug("Item to write to csv: " + str(spf_item))
+                    
                     if spf_item[-3:-2] == "/" or spf_item[-4:-3] == "/":
-                        ptr = "SPF_CIDR-" + str(spf_item)
+                        if ':' in spf_item and spf_item.endswith('/128'):
+                            ptr = socket.getnameinfo((spf_item[0:-4],0),0)[0]
+                        elif '.' in spf_item and spf_item.endswith('/32'):
+                            ptr = socket.getnameinfo((spf_item[0:-3],0),0)[0]
+                        else:
+                            ptr = "SPF_CIDR-" + str(spf_item)
                     else:
-                        ptr_lookup = search_dns_record(spf_item, "ptr")
+                        ptr_lookup = resolver.query(spf_item, "ptr")
                         ptr = "SPF_PTR-" + str(ptr_lookup)
                     
                     writer.writerow( { 'ptr': ptr.strip("."), 'ip': spf_item, "mail_server_group": maildomain } )
