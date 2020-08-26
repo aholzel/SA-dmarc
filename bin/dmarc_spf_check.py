@@ -35,6 +35,7 @@ SOFTWARE.
 # 2020-08-25    1.4.0       Arnold      [FIX]   Fixed a problem when there where multiple A records for a domain, only 1 was returned
 #                                       [FIX]   Fixed single IP notation in the lookup, it is now written as a /32 to be able to do CIDR lookups
 #                                       [ADD]   Added lookups for AAAA records. 
+# 2020-08-26    1.5.0       Arnold      [FIX]   Fixed a problem with writing back the record that didn't need checking in the spf_mailservers.csv
 #
 ##################################################################
 import subprocess, shlex, re, csv, sys, argparse, os
@@ -234,7 +235,8 @@ with open(dmarc_csv_file, "rb") as csvfile:
                     # Check each row and see if the maildomain is something we will lookup again later, if so don't write it back 
                     # to the csv file.
                     if row['mail_server_group'] != maildomain:
-                        writer.writerow( { 'ptr': row['ptr'], 'ip': row['ip'], "mail_server_group": row['mail_server_group'] } )
+                        dict_to_write = { 'ptr': row['ptr'], 'ip': row['ip'], 'mail_server_group': row['mail_server_group'] }
+                        writer.writerow( dict_to_write )
                     
             script_logger.debug("===== Start SPF checks =====")
             
