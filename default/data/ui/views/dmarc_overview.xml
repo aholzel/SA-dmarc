@@ -9,9 +9,9 @@
   </search>
   <search id="dmarc_report_baseSearch2">
     <query>`dmarc_log` $headerFromDomain_multiSelect$
-| fillnull spf_result_1 spf_domain_1 spf_domain_2 spf_result_2 dkim_domain_1 dkim_result_1 dkim_domain_2 dkim_result_2 spf_scope_1 spf_scope_2 value="not_set" 
+| fillnull spf_result_1 spf_domain_1 spf_domain_2 spf_result_2 dkim_domain_1 dkim_result_1 dkim_domain_2 dkim_result_2 spf_scope_1 spf_scope_2 dkim_selector value="not_set" 
 | eval spf_domain_1=lower(spf_domain_1), spf_domain_2=lower(spf_domain_2), spf_result_1=lower(spf_result_1), spf_result_2=lower(spf_result_2), dkim_domain_1=lower(dkim_domain_1), dkim_domain_2=lower(dkim_domain_2), dkim_result_1=lower(dkim_result_1), dkim_result_2=lower(dkim_result_2), source_ip=lower(source_ip), header_from=lower(header_from), published_adkim=if(lower(published_adkim)=="null" OR lower(published_adkim)=="none" OR isnull(published_adkim), "r", published_adkim), published_aspf=if(lower(published_aspf)=="null" OR lower(published_aspf)=="none" OR isnull(published_aspf), "r", published_aspf) 
-| stats values(source_hostname) AS source_hostname, values(published_p) AS published_dmarc_policy, values(published_adkim) AS published_dmarc_adkim, values(published_aspf) AS published_dmarc_aspf, sum(count) as messages BY spf_domain_1 spf_result_1 spf_scope_1 spf_domain_2 spf_result_2 spf_scope_2 dkim_domain_1 dkim_result_1 dkim_domain_2 dkim_result_2 source_ip header_from org_name evaluated_disposition
+| stats values(source_hostname) AS source_hostname, values(published_p) AS published_dmarc_policy, values(published_adkim) AS published_dmarc_adkim, values(published_aspf) AS published_dmarc_aspf, sum(count) as messages BY spf_domain_1 spf_result_1 spf_scope_1 spf_domain_2 spf_result_2 spf_scope_2 dkim_domain_1 dkim_result_1 dkim_domain_2 dkim_result_2 dkim_selector source_ip header_from org_name evaluated_disposition
 | lookup spf_mailservers ip as source_ip OUTPUT ptr AS PTR_lookup mail_server_group 
 | fillnull mail_server_group value="NON SPF-server" 
 $ip_lookup$ 
@@ -32,7 +32,7 @@ $ip_lookup$
 | eventstats sum(messages) as messages_dkim_dmarc by dkim_dmarc option1
 | eval messages_spf_dmarc=spf_dmarc.":".messages_spf_dmarc, messages_dkim_dmarc=dkim_dmarc.":".messages_dkim_dmarc
 | eval messages_spf_dmarc_aligned=substr(mvindex(messages_spf_dmarc, mvfind(messages_spf_dmarc, "^aligned.*")),9), messages_dkim_dmarc_aligned=substr(mvindex(messages_dkim_dmarc, mvfind(messages_dkim_dmarc, "^aligned.*")),9)
-| table sending_mailserver_domain dc_header_from messages dc_source_ip spf_score dkim_score header_from source_ip PTR Country dkim_dmarc dkim_result dkim_result_1 dkim_result_2 spf_dmarc spf_result spf_result_1 spf_result_2 spf_domain spf_domain_1 spf_domain_2 dkim_domain dkim_domain_1 dkim_domain_2 org_name evaluated_disposition messages_spf_dmarc messages_dkim_dmarc messages_spf_dmarc_aligned messages_dkim_dmarc_aligned dmarc_correct spf_scope spf_scope_1 spf_scope_2 mail_server_group spf_result
+| table sending_mailserver_domain dc_header_from messages dc_source_ip spf_score dkim_score header_from source_ip PTR Country dkim_dmarc dkim_result dkim_result_1 dkim_result_2 dkim_selector spf_dmarc spf_result spf_result_1 spf_result_2 spf_domain spf_domain_1 spf_domain_2 dkim_domain dkim_domain_1 dkim_domain_2 org_name evaluated_disposition messages_spf_dmarc messages_dkim_dmarc messages_spf_dmarc_aligned messages_dkim_dmarc_aligned dmarc_correct spf_scope spf_scope_1 spf_scope_2 mail_server_group spf_result
     </query>
     <earliest>$timeRange.earliest$</earliest>
     <latest>$timeRange.latest$</latest>
@@ -179,11 +179,11 @@ $ip_lookup$
       <table>
         <search base="dmarc_report_baseSearch2">
           <query>| search $groupBy_Select$="$value$"
-| stats values(Country) AS Country, sum(messages) AS messages, values(PTR) AS PTR, values(org_name) AS org_name, values(dmarc_correct) AS dmarc_correct, values(spf_scope) AS spf_scope BY source_ip dkim_result spf_result header_from spf_dmarc dkim_dmarc spf_domain dkim_domain evaluated_disposition 
+| stats values(Country) AS Country, sum(messages) AS messages, values(PTR) AS PTR, values(org_name) AS org_name, values(dmarc_correct) AS dmarc_correct, values(spf_scope) AS spf_scope BY source_ip dkim_result spf_result header_from spf_dmarc dkim_dmarc spf_domain dkim_domain dkim_selector evaluated_disposition 
 | eval aantalMin2=mvcount(org_name)-2, org_name=if(mvcount(org_name)&gt;2, mvindex(org_name,0).", ".mvindex(org_name,1)." + ".aantalMin2." more", mvjoin(org_name,", ")), PTR=if(isnull(PTR) OR PTR="", "UNKNOWN", PTR)
 | sort - messages 
-| table header_from source_ip PTR Country messages dkim_dmarc dkim_result dkim_domain spf_dmarc spf_result spf_domain spf_scope org_name evaluated_disposition dmarc_correct 
-| rename header_from AS "From: Domain", source_ip AS "Source IP", PTR AS "PTR of source IP", messages AS "Messages", dkim_dmarc AS "DKIM: Allignment", dkim_result AS "DKIM: Result", dkim_domain AS "DKIM: d=", spf_dmarc AS "SPF: Allignment", spf_result AS "SPF: Lookup", spf_domain AS "SPF: Domain", spf_scope AS "SPF: Scope", org_name AS "AS Received By", evaluated_disposition AS "Action taken", dmarc_correct AS "Correct Policy?"</query>
+| table header_from source_ip PTR Country messages dkim_dmarc dkim_result dkim_selector dkim_domain spf_dmarc spf_result spf_domain spf_scope org_name evaluated_disposition dmarc_correct 
+| rename header_from AS "From: Domain", source_ip AS "Source IP", PTR AS "PTR of source IP", messages AS "Messages", dkim_dmarc AS "DKIM: Allignment", dkim_result AS "DKIM: Result", dkim_selector AS "DKIM: s=", dkim_domain AS "DKIM: d=", spf_dmarc AS "SPF: Allignment", spf_result AS "SPF: Lookup", spf_domain AS "SPF: Domain", spf_scope AS "SPF: Scope", org_name AS "AS Received By", evaluated_disposition AS "Action taken", dmarc_correct AS "Correct Policy?"</query>
         </search>
         <option name="count">10</option>
         <option name="dataOverlayMode">none</option>
