@@ -27,15 +27,7 @@ SOFTWARE.
 #
 # Version history
 # Date          Version     Author      Type    Description
-# 2018-05-28    1.0         Arnold              Initial version
-# 2018-05-29    1.1         Arnold              Added some logging
-# 2018-05-30    1.2         Arnold              Changed the dmarc_domain csv to be able to exclude domains from the spf lookup
-#                                               domains with a exists: item in the spf record can't be resolved.    
-# 2018-06-25    1.3         Arnold              Disabled some super debug log
-# 2020-08-25    1.4.0       Arnold      [FIX]   Fixed a problem when there where multiple A records for a domain, only 1 was returned
-#                                       [FIX]   Fixed single IP notation in the lookup, it is now written as a /32 to be able to do CIDR lookups
-#                                       [ADD]   Added lookups for AAAA records. 
-# 2020-08-26    1.5.0       Arnold      [FIX]   Fixed a problem with writing back the record that didn't need checking in the spf_mailservers.csv
+# 2021-05-06    2.0.0       Arnold      [MOD]   Changes to make the script Splunk Python3 compatible
 #
 ##################################################################
 import subprocess, shlex, re, csv, sys, argparse, os
@@ -180,7 +172,7 @@ def make_binary(input):
     
     return output
         
-with open(dmarc_csv_file, "rb") as csvfile:
+with open(dmarc_csv_file, "r") as csvfile:
     domainreader = csv.DictReader(csvfile)
     
     for row in domainreader:
@@ -223,7 +215,7 @@ with open(dmarc_csv_file, "rb") as csvfile:
         elif txt_lookup_type == "spf" and spf_lookup_script == 1:
             # Open the SPF lookup file and remove the records for this domain so we can put in the new ones later.
             
-            with open(spf_csv_file, "rb") as spf_csv_read:
+            with open(spf_csv_file, "r") as spf_csv_read:
                 # First read everything that is currently in the csv into a list 
                 spf_reader = list(csv.DictReader(spf_csv_read))
            
@@ -269,10 +261,17 @@ with open(dmarc_csv_file, "rb") as csvfile:
                         lookup_a = maildomain
                         
                     a_record = search_dns_record(lookup_a, "a")
-                    
                     spf_list[spf_list.index(spf_item)] = "-"
-                    spf_list_append = [a_record.strip(".")]
-                    spf_list += spf_list_append
+                    if isinstance(a_record, list):
+                        for a_rec in a_record:
+                            
+                            spf_list_append = [a_rec.strip(".")]
+                            spf_list += spf_list_append
+                    else:
+                        
+                        spf_list_append = [a_record.strip(".")]
+                        spf_list += spf_list_append
+
                 elif str(spf_item) == "mx" or str(spf_item) == "+mx":
                     script_logger.debug("Found \"mx\" record: " + str(spf_item) + ", resolving....")
                     mx_record = search_dns_record(maildomain, "mx")

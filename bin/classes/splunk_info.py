@@ -1,17 +1,25 @@
 #!/usr/bin/env python
-"""
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+'''
+Copyright 2017-2019 Arnold Holzel
 
-    http://www.apache.org/licenses/LICENSE-2.0
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the 'Software'), to deal
+in the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+'''
 ##################################################################
 # Description   : Class to check if the script is running in a searchhead cluster
 #                 and if so what the current role is in the cluster (member or captain)
@@ -25,19 +33,21 @@ limitations under the License.
 # 2017-12-22    1.4         Arnold Holzel       the get_credetials method will now give back "NO_PASSWORD_FOUND_FOR_THIS_USER"  
 #                                               if no password was found
 # 2017-12-28    1.5         Arnold Holzel       made the Splunk_Info class more generic by using the app name as custom conf file name.
-#
+# 2018-11-08    1.6         Arnold Holzel       add the create_kv_if_needed function
+# 2019-05-29    2.0         Arnold Holzel       made sure you always get an log_level back, even if the option doesn't exist in the config file
+#                                               changed license to GPL 3.0    
 ##################################################################
 import logging, logging.handlers
 import os
 import sys
-import ConfigParser
+import configparser
 
 import splunklib.client as client
 import splunk.entity as entity
 
 __author__ = 'Arnold Holzel'
-__version__ = '1.5'
-__license__ = 'Apache License 2.0'
+__version__ = '2.0'
+__license__ = 'GPL 3.0'
 
 class Splunk_Info(object):
     def __init__(self, sessionKey=None, app="-", logger=None):
@@ -155,7 +165,7 @@ class Splunk_Info(object):
             default_file = os.path.normpath(app_dir + os.sep + "metadata" + os.sep + "default.meta")
             local_file = os.path.normpath(app_dir + os.sep + "metadata" + os.sep + "local.meta")
         
-        config = ConfigParser.RawConfigParser()
+        config = configparser.RawConfigParser()
     
         # check if the requested config file is in the default dir, if so read the content, else create a empty list to prevent errors
         if os.path.exists(default_file):
@@ -188,7 +198,9 @@ class Splunk_Info(object):
                 
         # If the log_level is requested make sure to give a value back that can be used
         if option == "log_level":
-            if int(active_config) > 0 and int(active_config) < 20:
+            if active_config == None:
+                active_config = 20
+            elif int(active_config) > 0 and int(active_config) < 20:
                 active_config = 10
             elif int(active_config) >= 20 and int(active_config) < 30:
                 active_config = 20
@@ -216,7 +228,7 @@ class Splunk_Info(object):
         else:
             local_file = os.path.normpath(app_dir + os.sep + "metadata" + os.sep + "local.meta")
             
-        config = ConfigParser.RawConfigParser()
+        config = configparser.RawConfigParser()
     
         if os.path.exists(local_file):
             config.read(local_file)
@@ -283,3 +295,52 @@ class Splunk_Info(object):
 
         except Exception:
             self.logger.exception("An error occurred updating credentials. Please ensure your user account has admin_all_objects and/or list_storage_passwords capabilities.")
+            
+    def create_kv_if_needed(self, collection_name, collection_fields, kwargs):
+        service = client.connect(
+            token=self.sessionKey,
+            owner="nobody",
+            app=self.app)
+
+        export_fields_list_kv = []
+        export_fields_list_kv.extend(collection_fields.iterkeys())
+
+        if collection_name in service.kvstore:
+            return export_fields_list_kv
+
+        splunk_info = self.connection.info()
+
+        # The collection doesn't exist so create it now,
+        # and also create the collections.conf file with the correct fields
+        self.logger.debug("The KV Store " + str(collection_name) +
+                          " doesn't exist so create it")
+
+        # Create and select the KVstore collection
+        service.kvstore.create(
+            name=collection_name,
+            fields=collection_fields,
+            **kwargs
+        )
+
+        # The kvstore.create command only creates the kvstore but doesn't
+        # mean you can use it in a search.
+        # To be able to use it a search we need to add a stanza with the
+        # definition for the collection in transforms.conf.
+        fields_list = ','.join(map(str, export_fields_list_kv))
+        splunk_info.write_config(
+            "transforms.conf",
+            collection_name,
+            "external_type",
+            "kvstore")
+        splunk_info.write_config(
+            "transforms.conf",
+            collection_name,
+            "collection",
+            collection_name)
+        splunk_info.write_config(
+            "transforms.conf",
+            collection_name,
+            "fields_list",
+            fields_list)
+
+        return export_fields_list_kv

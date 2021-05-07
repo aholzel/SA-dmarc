@@ -17,13 +17,14 @@ limitations under the License.
 # Description   : Class to set up a logger that can handle multiple log formats and files
 #
 # Version history
-# Date          Version     Author              Description
-# ?             1.0.2       Arnold Holzel       Initial version 
-# 2017-12-11    1.1         Arnold Holzel       Rewritten everything to make sure the logger can handle 
+# Date          Version     Author      type    Description
+# ?             1.0.2       Arnold              Initial version 
+# 2017-12-11    1.1         Arnold              Rewritten everything to make sure the logger can handle 
 #                                               multiple log formats and gives more info in case of problems.
 #                                               Added this change log
-# 2017-12-15    1.2         Arnold Holzel       Make use of the give_splunk_paths function that was added to the Splunk_Info class
-# 
+# 2017-12-15    1.2         Arnold              Make use of the give_splunk_paths function that was added to the Splunk_Info class
+# 2021-02-18    2.0.0       Arnold      [MOD]   Splunk python 3 changes
+#
 ##################################################################
 import logging
 import logging.handlers
@@ -31,18 +32,19 @@ import os
 import re 
 import sys
 
-import splunk_info as si
+from .splunk_info import Splunk_Info
+
 __author__ = 'Arnold Holzel'
-__version__ = '1.2'
+__version__ = '2.0.0'
 __license__ = 'Apache License 2.0'
 
-splunk_info = si.Splunk_Info(sessionKey="NA")
+splunk_info = Splunk_Info(sessionKey="NA")
 script_dir = os.path.dirname(os.path.abspath(__file__))                 # The directory of this script
 splunk_paths = splunk_info.give_splunk_paths(script_dir)                # Get info about the Splunk installation
 script_log_file = os.path.normpath(splunk_paths['app_root_dir'] + os.sep + 'logs' + os.sep + splunk_paths['app_name'] + '.log')
 
 class Logger:
-    def logger_setup(self, name, log_file=script_log_file, level=logging.INFO, format="normal"):
+    def logger_setup(self, name, log_file=script_log_file, level=logging.INFO, format="normal", maxSize=10485760):
         # Example usage:
         #   log_level = 20 # 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR, 50=CRITICAL
         #   logger = Logger()
@@ -72,7 +74,7 @@ class Logger:
             except Exception:
                 sys.exit(2)
             
-        handler = logging.handlers.RotatingFileHandler(filename=log_file, maxBytes=10485760, backupCount=5)
+        handler = logging.handlers.RotatingFileHandler(filename=log_file, maxBytes=maxSize, backupCount=5)
         handler.setFormatter(log_format)
  
         logger = logging.getLogger(name)
