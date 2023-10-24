@@ -69,11 +69,11 @@ $ip_lookup$
       <label>Group by</label>
       <choice value="mail_server_group">(non) SPF server</choice>
       <choice value="evaluated_disposition">Action taken</choice>
-      <choice value="dkim_dmarc">DKIM allignment</choice>
+      <choice value="dkim_dmarc">DKIM alignment</choice>
       <choice value="dkim_result">DKIM result</choice>
       <choice value="header_from">Header from</choice>
       <choice value="org_name">Report sending organization</choice>
-      <choice value="spf_dmarc">SPF allignment</choice>
+      <choice value="spf_dmarc">SPF alignment</choice>
       <choice value="spf_result">SPF result</choice>
       <choice value="sending_mailserver_domain">Sending server domain</choice>
       <default>evaluated_disposition</default>
@@ -158,8 +158,8 @@ $ip_lookup$
 | eval dkim_score=round((messages_dkim_dmarc_aligned/messages)*100,1)."%", spf_score=round((messages_spf_dmarc_aligned/messages)*100,1)."%"
 | sort - messages 
 | table $groupBy_Select$ dc_header_from messages dc_src_ip spf_score dkim_score
-| rename dc_header_from AS "From: domain count", dc_src_ip AS "IP count", messages AS "Message count", spf_score AS "SPF allignment score", dkim_score AS "DKIM allignment score"
-| rename sending_mailserver_domain AS "Sending mailserver domain", header_from AS "Header from", org_name AS "Report sending organization", spf_dmarc AS "SPF allignment", dkim_dmarc AS "DKIM allignment", evaluated_disposition AS "Action taken",  mail_server_group AS "(non) SPF server", spf_result AS "SPF result", dkim_result AS "DKIM result"</query>
+| rename dc_header_from AS "From: domain count", dc_src_ip AS "IP count", messages AS "Message count", spf_score AS "SPF alignment score", dkim_score AS "DKIM alignment score"
+| rename sending_mailserver_domain AS "Sending mailserver domain", header_from AS "Header from", org_name AS "Report sending organization", spf_dmarc AS "SPF alignment", dkim_dmarc AS "DKIM alignment", evaluated_disposition AS "Action taken",  mail_server_group AS "(non) SPF server", spf_result AS "SPF result", dkim_result AS "DKIM result"</query>
         </search>
         <option name="count">10</option>
         <option name="dataOverlayMode">none</option>
@@ -169,7 +169,7 @@ $ip_lookup$
         <option name="totalsRow">false</option>
         <option name="wrap">true</option>
         <drilldown>
-          <eval token="value">case(isnotnull($row.(non) SPF server$),$row.(non) SPF server$, isnotnull($row.Sending mailserver domain$),$row.Sending mailserver domain$, isnotnull($row.Header from$),$row.Header from$, isnotnull($row.Report sending organization$),$row.Report sending organization$, isnotnull($row.SPF allignment$),$row.SPF allignment$, isnotnull($row.DKIM allignment$),$row.DKIM allignment$, isnotnull($row.Action taken$),$row.Action taken$, isnotnull($row.SPF result$),$row.SPF result$, isnotnull($row.DKIM result$),$row.DKIM result$)</eval>
+          <eval token="value">case(isnotnull($row.(non) SPF server$),$row.(non) SPF server$, isnotnull($row.Sending mailserver domain$),$row.Sending mailserver domain$, isnotnull($row.Header from$),$row.Header from$, isnotnull($row.Report sending organization$),$row.Report sending organization$, isnotnull($row.SPF alignment$),$row.SPF alignment$, isnotnull($row.DKIM alignment$),$row.DKIM alignment$, isnotnull($row.Action taken$),$row.Action taken$, isnotnull($row.SPF result$),$row.SPF result$, isnotnull($row.DKIM result$),$row.DKIM result$)</eval>
         </drilldown>
       </table>
     </panel>
@@ -189,7 +189,7 @@ $ip_lookup$
     spf_scope=="not_set",null(), true(),spf_scope)
 | sort - messages 
 | table header_from source_ip PTR Country messages dkim_dmarc dkim_result dkim_domain dkim_selector spf_dmarc spf_result spf_domain spf_scope org_name evaluated_disposition dmarc_correct 
-| rename header_from AS "From: Domain", source_ip AS "Source IP", PTR AS "PTR of source IP", messages AS "Messages", dkim_dmarc AS "DKIM: Allignment", dkim_result AS "DKIM: Result", dkim_domain AS "DKIM: d=", dkim_selector AS "DKIM selector", spf_dmarc AS "SPF: Allignment", spf_result AS "SPF: Lookup", spf_domain AS "SPF: Domain", spf_scope AS "SPF: Scope", org_name AS "AS Received By", evaluated_disposition AS "Action taken", dmarc_correct AS "Correct Policy?"</query>
+| rename header_from AS "From: Domain", source_ip AS "Source IP", PTR AS "PTR of source IP", messages AS "Messages", dkim_dmarc AS "DKIM: Alignment", dkim_result AS "DKIM: Result", dkim_domain AS "DKIM: d=", dkim_selector AS "DKIM selector", spf_dmarc AS "SPF: Alignment", spf_result AS "SPF: Lookup", spf_domain AS "SPF: Domain", spf_scope AS "SPF: Scope", org_name AS "AS Received By", evaluated_disposition AS "Action taken", dmarc_correct AS "Correct Policy?"</query>
         </search>
         <option name="count">10</option>
         <option name="dataOverlayMode">none</option>
@@ -199,13 +199,13 @@ $ip_lookup$
         <option name="rowNumbers">false</option>
         <option name="totalsRow">false</option>
         <option name="wrap">true</option>
-        <format type="color" field="DKIM: Allignment">
+        <format type="color" field="DKIM: Alignment">
           <colorPalette type="map">{"aligned":#A2CC3E,"unaligned":#D93F3C,"not_set":#ED8440}</colorPalette>
         </format>
         <format type="color" field="DKIM: Result">
           <colorPalette type="map">{"pass":#A2CC3E,"fail":#D93F3C,"permerror":#D93F3C,"temperror":#D93F3C,"not_set":#ED8440}</colorPalette>
         </format>
-        <format type="color" field="SPF: Allignment">
+        <format type="color" field="SPF: Alignment">
           <colorPalette type="map">{"aligned":#A2CC3E,"unaligned":#D93F3C,"not_set":#ED8440}</colorPalette>
         </format>
         <format type="color" field="SPF: Lookup">
