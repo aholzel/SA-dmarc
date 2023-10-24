@@ -202,8 +202,14 @@ $ip_lookup$
         <format type="color" field="DKIM: Allignment">
           <colorPalette type="map">{"aligned":#A2CC3E,"unaligned":#D93F3C,"not_set":#ED8440}</colorPalette>
         </format>
+        <format type="color" field="DKIM: Result">
+          <colorPalette type="map">{"pass":#A2CC3E,"fail":#D93F3C,"permerror":#D93F3C,"temperror":#D93F3C,"not_set":#ED8440}</colorPalette>
+        </format>
         <format type="color" field="SPF: Allignment">
           <colorPalette type="map">{"aligned":#A2CC3E,"unaligned":#D93F3C,"not_set":#ED8440}</colorPalette>
+        </format>
+        <format type="color" field="SPF: Lookup">
+          <colorPalette type="map">{"pass":#A2CC3E,"softfail":#D93F3C,"fail":#D93F3C,"permerror":#D93F3C,"temperror":#D93F3C,"none":#ED8440,"neutral":#ED8440}</colorPalette>
         </format>
         <format type="color" field="Action taken">
           <colorPalette type="map">{"deliver":#A2CC3E,"quarantine":#ED8440,"reject":#D93F3C}</colorPalette>
