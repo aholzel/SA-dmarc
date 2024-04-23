@@ -1,4 +1,4 @@
-<form>
+<form version="1.1">
   <label>DMARC cluster map</label>
   <fieldset submitButton="true" autoRun="false">
     <input type="time" token="timeRange">
@@ -21,7 +21,7 @@
       <fieldForLabel>domain</fieldForLabel>
       <fieldForValue>domain</fieldForValue>
       <search>
-        <query>|`dmarc_domains(domain)`</query>
+        <query>|`dmarc_domains(table_fields=domain)`</query>
         <earliest>0</earliest>
         <latest></latest>
       </search>
