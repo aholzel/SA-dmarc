@@ -1,3 +1,5 @@
+# Copyright (C) Dnspython Contributors, see LICENSE for text of ISC license
+
 # Copyright (C) 2015 Red Hat, Inc.
 # Author: Petr Spacek <pspacek@redhat.com>
 #
@@ -14,16 +16,15 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 # OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+import dns.immutable
 import dns.rdtypes.euibase
 
 
+@dns.immutable.immutable
 class EUI48(dns.rdtypes.euibase.EUIBase):
+    """EUI48 record"""
 
-    """EUI48 record
-
-    @ivar fingerprint: 48-bit Extended Unique Identifier (EUI-48)
-    @type fingerprint: string
-    @see: rfc7043.txt"""
+    # see: rfc7043.txt
 
     byte_len = 6  # 0123456789ab (in hex)
     text_len = byte_len * 3 - 1  # 01-23-45-67-89-ab

@@ -1,6 +1,6 @@
 # coding=utf-8
 #
-# Copyright © 2011-2015 Splunk, Inc.
+# Copyright © 2011-2024 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -14,13 +14,11 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from __future__ import absolute_import, division, print_function, unicode_literals
+import sys
 
 from .decorators import ConfigurationSetting
 from .search_command import SearchCommand
 
-from splunklib import six
-from splunklib.six.moves import map as imap, filter as ifilter
 
 # P1 [O] TODO: Discuss generates_timeorder in the class-level documentation for GeneratingCommand
 
@@ -212,13 +210,48 @@ class GeneratingCommand(SearchCommand):
 
     def _execute_chunk_v2(self, process, chunk):
         count = 0
+        records = []
         for row in process:
-            self._record_writer.write_record(row)
+            records.append(row)
             count += 1
             if count == self._record_writer._maxresultrows:
-                self._finished = False
-                return
-        self._finished = True
+                break
+
+        for row in records:
+            self._record_writer.write_record(row)
+
+        if count == self._record_writer._maxresultrows:
+            self._finished = False
+        else:
+            self._finished = True
+
+    def process(self, argv=sys.argv, ifile=sys.stdin, ofile=sys.stdout, allow_empty_input=True):
+        """ Process data.
+
+        :param argv: Command line arguments.
+        :type argv: list or tuple
+
+        :param ifile: Input data file.
+        :type ifile: file
+
+        :param ofile: Output data file.
+        :type ofile: file
+
+        :param allow_empty_input: For generating commands, it must be true. Doing otherwise will cause an error.
+        :type allow_empty_input: bool
+
+        :return: :const:`None`
+        :rtype: NoneType
+
+        """
+
+        # Generating commands are expected to run on an empty set of inputs as the first command being run in a search,
+        # also this class implements its own separate _execute_chunk_v2 method which does not respect allow_empty_input
+        # so ensure that allow_empty_input is always True
+
+        if not allow_empty_input:
+            raise ValueError("allow_empty_input cannot be False for Generating Commands")
+        return super().process(argv=argv, ifile=ifile, ofile=ofile, allow_empty_input=True)
 
     # endregion
 
@@ -333,18 +366,14 @@ class GeneratingCommand(SearchCommand):
             iteritems = SearchCommand.ConfigurationSettings.iteritems(self)
             version = self.command.protocol_version
             if version == 2:
-                iteritems = ifilter(lambda name_value1: name_value1[0] != 'distributed', iteritems)
+                iteritems = [name_value1 for name_value1 in iteritems if name_value1[0] != 'distributed']
                 if not self.distributed and self.type == 'streaming':
-                    iteritems = imap(
-                        lambda name_value: (name_value[0], 'stateful') if name_value[0] == 'type' else (name_value[0], name_value[1]), iteritems)
+                    iteritems = [(name_value[0], 'stateful') if name_value[0] == 'type' else (name_value[0], name_value[1]) for name_value in iteritems]
             return iteritems
 
         # N.B.: Does not use Python 3 dict view semantics
-        if not six.PY2:
-            items = iteritems
+        items = iteritems
 
-        pass
         # endregion
 
-    pass
     # endregion

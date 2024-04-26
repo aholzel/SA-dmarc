@@ -15,11 +15,12 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 # OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+import dns.immutable
 import dns.rdtypes.txtbase
 
 
+@dns.immutable.immutable
 class AVC(dns.rdtypes.txtbase.TXTBase):
+    """AVC record"""
 
-    """AVC record
-
-    @see: U{http://www.iana.org/assignments/dns-parameters/AVC/avc-completed-template}"""
+    # See: IANA dns parameters for AVC

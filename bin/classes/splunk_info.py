@@ -260,7 +260,7 @@ class Splunk_Info(object):
         
         found = 0
         # make a dict when the correct info is found
-        for i, c in entities.items():
+        for i, c in list(entities.items()):
             if c['username'] == username:
                 credentials = {c['username']: c['clear_password']}
                 password = credentials[username]
@@ -303,7 +303,7 @@ class Splunk_Info(object):
             app=self.app)
 
         export_fields_list_kv = []
-        export_fields_list_kv.extend(collection_fields.iterkeys())
+        export_fields_list_kv.extend(iter(collection_fields.keys()))
 
         if collection_name in service.kvstore:
             return export_fields_list_kv

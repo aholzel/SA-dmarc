@@ -15,13 +15,19 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 # OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-import dns.rdtypes.dnskeybase
-from dns.rdtypes.dnskeybase import flags_to_text_set, flags_from_text_set
+import dns.immutable
+import dns.rdtypes.dnskeybase  # lgtm[py/import-and-import-from]
+
+# pylint: disable=unused-import
+from dns.rdtypes.dnskeybase import (  # noqa: F401  lgtm[py/unused-import]
+    REVOKE,
+    SEP,
+    ZONE,
+)
+
+# pylint: enable=unused-import
 
 
-__all__ = ['flags_to_text_set', 'flags_from_text_set']
-
-
+@dns.immutable.immutable
 class CDNSKEY(dns.rdtypes.dnskeybase.DNSKEYBase):
-
     """CDNSKEY record"""

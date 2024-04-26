@@ -15,11 +15,12 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 # OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+import dns.immutable
 import dns.rdtypes.txtbase
 
 
+@dns.immutable.immutable
 class SPF(dns.rdtypes.txtbase.TXTBase):
+    """SPF record"""
 
-    """SPF record
-
-    @see: RFC 4408"""
+    # see: RFC 4408
