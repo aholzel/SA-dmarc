@@ -1,4 +1,4 @@
-<dashboard>
+<dashboard version="1.1">
   <label>DMARC RFC info</label>
   <description>Brief summary of the important parts of the DMARC RFC7489. (all links open in a new window)</description>
   <row>

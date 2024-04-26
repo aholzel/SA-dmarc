@@ -32,6 +32,7 @@ SOFTWARE.
 ##################################################################
 import subprocess, shlex, re, csv, sys, argparse, os
 from threading import Timer
+from io import open
 
 import classes.splunk_info as si
 import classes.custom_logger as c_logger
