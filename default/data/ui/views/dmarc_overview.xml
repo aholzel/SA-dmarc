@@ -1,4 +1,4 @@
-<form theme="dark" version="1.1">
+<form theme="dark">
   <search id="dmarc_report_baseSearch1">
     <query>`dmarc_log` $headerFromDomain_multiSelect$
 | head 1
