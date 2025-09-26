@@ -5,7 +5,7 @@ This file will contain the changes to the script files. In the script files you 
 ## General app changes
 | Date       | Version | Author  | **[Type]** Description                                                                |
 |:-----------|:--------|:--------|:--------------------------------------------------------------------------------------|
-| 2021-05-06 | 4.0.1   | Arnold  | **[ADD]** Added the DKIM selector as a column in the overview dashboard (thanks [@jbouwh](https://github.com/jbouwh))<br /> **[FIX]** Made the script Splunk python3 compliant<br /> **[MOD]** Fixed a typo in a macro (thanks [@jbouwh](https://github.com/jbouwh))<br /> **[MOD]** Updated the Splunk SDK<br /> **[MOD]** Changed the DNS lookup to get rid of the nslookup dependency<br /> **[MOD]** Updated the custom classes to python3 
+| 2021-05-06 | 4.1.0   | Arnold  | **[FIX]** Macro missing argument in the `dmarc_overview` dashboard. <br />**[MOD]** Dashboard version numbers. 
 
 ## dmarc_spf_check.py
 | Date       | Version | Author  | **[Type]** Description                                                                |
@@ -50,6 +50,7 @@ This file will contain the changes to the script files. In the script files you 
 | 2020-08-25 | 3.7.5   | Arnold  | **[FIX]** fixed csv writer problems in the dmarc_spf_check.py script.
 | 2020-10-09 | 3.8.0   | Arnold  | **[FIX]** Somehow the DMARC/SPF help dashboard was overwriten with the DMARC overview one.
 | 2021-04-14 | 3.8.1   | Arnold  | **[FIX]** Missing ";" behind the cross domain dmarc record in the DMARC help dashboard.
+| 2021-05-06 | 4.0.1   | Arnold  | **[ADD]** Added the DKIM selector as a column in the overview dashboard (thanks [@jbouwh](https://github.com/jbouwh))<br /> **[FIX]** Made the script Splunk python3 compliant<br /> **[MOD]** Fixed a typo in a macro (thanks [@jbouwh](https://github.com/jbouwh))<br /> **[MOD]** Updated the Splunk SDK<br /> **[MOD]** Changed the DNS lookup to get rid of the nslookup dependency<br /> **[MOD]** Updated the custom classes to python3 
 
 ## dmarc_spf_check.py
 | Date       | Version | Author  | **[Type]** Description                                                                |
